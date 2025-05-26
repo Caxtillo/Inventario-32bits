@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventario de Equipos - Adaptado</title>
+    <link rel="stylesheet" href="css/output.css?t=2024051601"> <!-- Cache busting -->
+    <link href="fa/css/all.min.css" rel="stylesheet">
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <style>
+        /* Estilos Base y Helpers */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+
+        .requires-admin, .requires-manager { display: none; } /* Oculto por JS */
+        
+        .modal {
+            display: none; /* Oculto por defecto */
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(17, 24, 39, 0.75); /* bg-gray-900 bg-opacity-75 */
+            z-index: 50; overflow: auto;
+        }
+        .modal.is-active { display: table !important; }
+        .modal-wrapper {
+            display: table-cell; vertical-align: middle; text-align: center;
+        }
+        .modal-content {
+            display: inline-block; text-align: left; background-color: white; /* bg-white */
+            padding: 1.5rem; /* p-6 */
+            border-radius: 0.5rem; /* rounded-lg */
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05); /* shadow-xl */
+            max-height: 90vh; overflow-y: auto; position: relative;
+        }
+
+        /* Tamaños específicos para modales */
+        #equipment-modal .modal-content { max-width: 64rem; /* Tailwind: max-w-4xl */ }
+        #maintenance-modal .modal-content { max-width: 48rem; /* Tailwind: max-w-2xl */ }
+        #qr-code-modal .modal-content { max-width: 20rem; width: auto; /* Tailwind: max-w-xs */ }
+        #export-choice-modal .modal-content { max-width: 24rem; /* Tailwind: max-w-sm */ }
+        #delete-confirm-modal .modal-content { max-width: 32rem; /* Tailwind: max-w-md */ }
+
+        .modal-content > button[id^="close-"] { /* Estilo para botones de cerrar 'X' */
+            position: absolute; top: 1rem; right: 1rem; z-index: 10;
+            /* Clases Tailwind equivalentes: text-gray-500 hover:text-gray-700 text-2xl focus:outline-none */
+        }
+
+        th.sortable-header { cursor: pointer; position: relative; padding-right: 1.5rem; }
+        th.sortable-header:hover { background-color: #e5e7eb; } /* Tailwind: hover:bg-gray-200 */
+        th .sort-icon {
+            position: absolute; right: 0.5rem; top: 50%; transform: translateY(-50%);
+            color: #9ca3af; /* Tailwind: text-gray-400 */
+            font-size: 0.75rem; /* Tailwind: text-xs */
+        }
+        th .sort-icon.active { color: #1f2937; } /* Tailwind: text-gray-800 */
+        .form-display-value {
+        display: none !important; /* Oculto por defecto, visible solo en modo ver */
+        margin-top: 0.25rem; /* mt-1 */
+        display: block; /* block */
+        width: 100%; /* w-full */
+        padding: 0.625rem 0.75rem; /* px-3 py-2.5 (ajustado para match input height) */
+        border: 1px solid #e2e8f0; /* border-gray-200 */
+        border-radius: 0.375rem; /* rounded-md */
+        background-color: #f8fafc; /* bg-gray-50 */
+        box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05); /* shadow-sm */
+        font-size: 0.875rem; /* sm:text-sm */
+        color: #374151; /* text-gray-700 */
+        pointer-events: none; /* No interactuable */
+        cursor: default; /* Cursor normal */
+    }
+            /* Clase que anulará el display: none !important solo cuando se necesite */
+        .form-display-value.is-active {
+            display: block !important;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-900"> <!-- Quitadas clases de dark mode y transition -->
+
+    <nav class="bg-white shadow-md p-4 sm:p-6 sticky top-0 z-40"> <!-- p-8 cambiado a p-4 sm:p-6 -->
+        <div class="container mx-auto flex flex-wrap justify-between items-center">
+            <div class="flex items-center mb-2 sm:mb-0">
+                <img src="assets/logo.png" alt="Logo Empresa" class="h-10 mr-3">
+                <h1 class="text-lg sm:text-xl font-bold text-blue-900">INVENTARIO EQUIPOS CORPORATIVOS</h1> <!-- ml-2 quitado -->
+            </div>
+            <div class="flex items-center space-x-2 sm:space-x-3"> <!-- space-x-3 sm:space-x-4 a space-x-2 sm:space-x-3 -->
+                <div class="text-xs sm:text-sm text-gray-600 hidden sm:block"> <!-- Quitado md:block, ahora sm:block -->
+                    Usuario: <span id="user-role-display" class="font-medium">Cargando...</span> <!-- Añadido font-medium -->
+                </div>
+                <button id="dashboard-button" title="Ver Dashboard"
+                        class="bg-cyan-600 text-white px-3 py-1.5 rounded-md hover:bg-cyan-700 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-1 transition duration-150 text-xs sm:text-sm"> <!-- text-sm a text-xs sm:text-sm -->
+                    <i class="fas fa-chart-line mr-1"></i> <span class="hidden sm:inline">Dashboard</span>
+                </button>
+                <button id="user-mgmt-button" title="Gestionar Usuarios"
+                    class="bg-purple-600 text-white px-3 py-1.5 rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-1 transition duration-150 text-xs sm:text-sm requires-admin">
+                    <i class="fas fa-users-cog mr-1"></i> <span class="hidden sm:inline">Usuarios</span>
+                </button>
+                <button id="logout-button" title="Cerrar Sesión"
+                    class="bg-red-600 text-white px-3 py-1.5 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 transition duration-150 text-xs sm:text-sm">
+                     <i class="fas fa-sign-out-alt mr-1"></i> <span class="hidden sm:inline">Salir</span>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mx-auto mt-6 px-4 pb-8">
+
+        <div class="fixed bottom-6 right-6 sm:bottom-10 sm:right-10 z-30 requires-admin requires-manager"> <!-- Ajuste de posición para móviles -->
+            <button
+                id="add-equipment-float-button"
+                class="bg-green-600 text-white rounded-full shadow-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 flex items-center justify-center w-12 h-12 sm:w-14 sm:w-14 p-0"
+                title="Agregar Nuevo Equipo">
+                <i class="fas fa-plus text-lg sm:text-xl"></i> <!-- Tamaño de icono responsivo -->
+            </button>
+        </div>
+
+        <!-- SECCIÓN DE FILTROS Y ACCIONES PRINCIPALES -->
+        <div class="bg-white p-4 rounded-lg shadow mb-6">
+            <div class="flex flex-wrap justify-between items-end gap-x-6 gap-y-4">
+                <!-- ... (Contenido de filtros, búsqueda, botones de importar/exportar como lo tenías) ... -->
+                <div class="flex flex-wrap items-end gap-4 flex-grow">
+                    <div class="flex-grow min-w-[200px] sm:min-w-[300px]">
+                        <label for="search-term" class="block text-sm font-medium text-gray-700 mb-1">Buscar:</label>
+                        <div class="mt-1 relative rounded-md shadow-sm">
+                            <input type="text" id="search-term" placeholder="Serial, modelo, asignado..."
+                                   class="block w-full px-4 py-2 rounded-md border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm transition duration-150">
+                        </div>
+                    </div>
+                    <div class="flex space-x-2">
+                        <button id="filter-button" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 transition duration-150 whitespace-nowrap">
+                            <i class="fas fa-filter mr-1"></i> Filtrar
+                        </button>
+                        <button id="clear-filter-button" title="Limpiar Filtros" class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-1 transition duration-150">
+                            <i class="fas fa-times"></i> <span class="sr-only">Limpiar</span>
+                        </button>
+                        <button id="filter-maintenance-button" title="Mantenimientos Pendientes" class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-1 transition duration-150 whitespace-nowrap">
+                            <i class="fas fa-wrench mr-1"></i> Mantenim.
+                        </button>
+                    </div>
+                </div>
+                <div class="flex flex-wrap items-center sm:items-end gap-2"> <!-- items-center para mejor alineación en mobile -->
+                     <button id="download-template-button" class="w-full sm:w-auto bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition duration-150 whitespace-nowrap">
+                         <i class="fas fa-download mr-1"></i> <span class="hidden sm:inline">Descargar Plantilla</span><span class="sm:hidden">Plantilla</span>
+                     </button>
+                     <button id="import-excel-button" class="w-full sm:w-auto bg-teal-500 hover:bg-teal-600 text-white px-4 py-2 rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-1 transition duration-150 whitespace-nowrap">
+                         <i class="fas fa-file-upload mr-1"></i> <span class="hidden sm:inline">Importar Excel</span><span class="sm:hidden">Importar</span>
+                     </button>
+                     <button id="export-button" class="w-full sm:w-auto bg-gray-700 hover:bg-gray-800 text-white px-4 py-2 rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-1 transition duration-150 whitespace-nowrap">
+                        <i class="fas fa-print mr-1"></i> <span class="hidden sm:inline">Exportar Vista...</span><span class="sm:hidden">Exportar</span>
+                    </button>
+                    <input type="file" id="excel-file-input" class="hidden" accept=".xlsx, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+                </div>
+            </div>
+            <div id="import-feedback" class="hidden mt-4 p-3 pr-8 rounded text-sm relative shadow-sm border"> <!-- Quitado border-gray-200 para que tome el color del tipo -->
+                <span id="import-feedback-message"></span>
+                <button id="close-import-feedback" class="absolute top-1 right-2 text-lg font-bold hover:text-black focus:outline-none">×</button> <!-- Color dependerá del contexto -->
+            </div>
+        </div>
+
+        <!-- SECCIÓN DE PAGINACIÓN SUPERIOR -->
+        <div class="flex flex-wrap justify-between items-center mb-4 gap-4">
+            <!-- ... (Contenido de paginación como lo tenías) ... -->
+            <div class="text-sm text-gray-600">
+                Mostrando <span id="items-showing" class="font-medium">0</span> de <span id="items-total" class="font-medium">0</span> equipos
+                <span id="filtered-info" class="text-gray-500"></span>
+            </div>
+            <div class="flex items-center space-x-2">
+                <label for="items-per-page" class="text-sm text-gray-600">Mostrar:</label>
+                <select id="items-per-page" class="w-20 px-3 py-1 border border-gray-300 rounded-md bg-white text-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                    <option value="10" selected>10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option>
+                </select>
+                <button id="prev-page-button" title="Página Anterior" class="px-3 py-1 border border-gray-300 rounded-md bg-white text-gray-700 text-sm hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed" disabled>< Ant</button>
+                <span class="text-sm text-gray-600">Pág <span id="current-page-display" class="font-medium">1</span>/<span id="total-pages-display" class="font-medium">1</span></span>
+                <button id="next-page-button" title="Página Siguiente" class="px-3 py-1 border border-gray-300 rounded-md bg-white text-gray-700 text-sm hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed" disabled>Sig ></button>
+            </div>
+        </div>
+<div id="bulk-actions-panel" class="mb-4 p-3 rounded-lg shadow bg-white text-gray-800 
+                                     flex flex-col sm:flex-row sm:items-center justify-between 
+                                     space-y-2 sm:space-y-0 sm:space-x-4 z-40 hidden">
+    <!-- El `selected-count` ahora es un div para darle más control de espacio -->
+    <div id="selected-count" class="text-lg font-semibold whitespace-nowrap">0 equipo(s) seleccionado(s)</div>
+    
+    <!-- Contenedor para los botones (para que se agrupen bien en línea) -->
+    <div class="flex space-x-2"> <!-- Cambiado de flex-col a flex y quitado w-full de los botones -->
+        <button id="bulk-edit-button" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2" disabled>
+            <i class="fas fa-edit mr-1"></i> Editar Seleccionados
+        </button>
+        <button id="bulk-delete-button" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2" disabled>
+            <i class="fas fa-trash mr-1"></i> Eliminar Seleccionados
+        </button>
+    </div>
+</div>
+        <!-- TABLA DE EQUIPOS -->
+    <!-- TABLA DE EQUIPOS -->
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+        <div class="overflow-x-auto">
+           <table class="min-w-full divide-y divide-gray-200">
+               <thead class="bg-gray-100">
+                   <tr>
+                       <!-- NUEVO: Checkbox para seleccionar todo -->
+                       <th scope="col" class="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                           <input type="checkbox" id="select-all-checkbox" class="form-checkbox h-4 w-4 text-indigo-600 rounded">
+                       </th>
+                       <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable-header" data-sort-key="index">N° <i class="fas fa-sort sort-icon"></i></th>
+                       <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable-header" data-sort-key="tipo_equipo">Tipo <i class="fas fa-sort sort-icon"></i></th>
+                       <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable-header" data-sort-key="marca">Marca <i class="fas fa-sort sort-icon"></i></th>
+                       <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable-header" data-sort-key="modelo">Modelo <i class="fas fa-sort sort-icon"></i></th>
+                       <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable-header" data-sort-key="serial">Serial <i class="fas fa-sort sort-icon"></i></th>
+                       <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable-header" data-sort-key="asignado_a">Asignado a <i class="fas fa-sort sort-icon"></i></th>
+                       <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable-header" data-sort-key="departamento">Depto <i class="fas fa-sort sort-icon"></i></th>
+                       <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable-header" data-sort-key="sede">Sede <i class="fas fa-sort sort-icon"></i></th> <!-- Nueva columna sede -->
+                       <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable-header" data-sort-key="estatus">Estatus <i class="fas fa-sort sort-icon"></i></th>
+                       <th scope="col" class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+                   </tr>
+               </thead>
+               <tbody id="equipment-table-body" class="bg-white divide-y divide-gray-200">
+                   <tr><td colspan="11" class="text-center px-6 py-4 whitespace-nowrap text-sm text-gray-500">Cargando datos...</td></tr> <!-- Colspan ajustado a 11 -->
+               </tbody>
+           </table>
+        </div>
+    </div>
+
+    <!-- MODAL DE EDICIÓN MÚLTIPLE -->
+    <div id="bulk-edit-modal" class="modal">
+        <div class="modal-wrapper">
+            <div class="modal-content max-w-xl">
+                <button id="close-bulk-edit-modal-button" class="absolute top-4 right-4 text-gray-500 hover:text-gray-800 text-2xl focus:outline-none">×</button>
+                <h2 class="text-2xl font-semibold mb-6 text-gray-800 border-b border-gray-200 pb-4">Editar Múltiples Equipos</h2>
+                <div id="bulk-edit-form-feedback" class="mb-5 p-3 rounded text-sm hidden"></div>
+                
+                <form id="bulk-edit-form" novalidate>
+                    <p class="mb-4 text-gray-700"><span id="bulk-edit-count" class="font-bold">0</span> equipos seleccionados.</p>
+                    <p class="mb-4 text-gray-600 text-sm">Seleccione los campos que desea editar para todos los equipos seleccionados:</p>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+                        <!-- Campo para Estatus -->
+                        <div class="space-y-1">
+                            <input type="checkbox" id="bulk-edit-estatus-checkbox" class="form-checkbox h-4 w-4 text-indigo-600 rounded">
+                            <label for="bulk-edit-estatus-checkbox" class="ml-2 text-sm font-medium text-gray-700">Estatus:</label>
+                            <select id="bulk-edit-estatus" name="bulk_edit_estatus" class="mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" disabled>
+                                <option value="">-- Seleccione --</option>
+                                <option value="Operativo">Operativo</option>
+                                <option value="En Reparación">En Reparación</option>
+                                <option value="En Almacén">En Almacén</option>
+                                <option value="Desincorporado">Desincorporado</option>
+                                <option value="Dañado">Dañado</option>
+                            </select>
+                        </div>
+
+                        <!-- Campo para Departamento -->
+                        <div class="space-y-1">
+                            <input type="checkbox" id="bulk-edit-departamento-checkbox" class="form-checkbox h-4 w-4 text-indigo-600 rounded">
+                            <label for="bulk-edit-departamento-checkbox" class="ml-2 text-sm font-medium text-gray-700">Departamento:</label>
+                            <select id="bulk-edit-departamento" name="bulk_edit_departamento" class="mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" disabled>
+                                <option value="">-- Seleccione --</option>
+                                <!-- Opciones se poblarán por JS -->
+                            </select>
+                            <input type="text" id="bulk-edit-departamento-input" name="bulk_edit_departamento_input" class="hidden mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="Nuevo departamento" disabled>
+                        </div>
+
+                        <!-- Campo para Sede -->
+                        <div class="space-y-1">
+                            <input type="checkbox" id="bulk-edit-sede-checkbox" class="form-checkbox h-4 w-4 text-indigo-600 rounded">
+                            <label for="bulk-edit-sede-checkbox" class="ml-2 text-sm font-medium text-gray-700">Sede:</label>
+                            <select id="bulk-edit-sede" name="bulk_edit_sede" class="mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" disabled>
+                                <option value="">-- Seleccione --</option>
+                                <!-- Opciones se poblarán por JS -->
+                            </select>
+                            <input type="text" id="bulk-edit-sede-input" name="bulk_edit_sede_input" class="hidden mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="Nueva sede" disabled>
+                        </div>
+                        
+                        <!-- Puedes añadir más campos aquí si son comunes y no únicos (ej. Observación, si se sobrescribe) -->
+                        <div class="space-y-1 sm:col-span-2">
+                             <input type="checkbox" id="bulk-edit-observacion-checkbox" class="form-checkbox h-4 w-4 text-indigo-600 rounded">
+                            <label for="bulk-edit-observacion-checkbox" class="ml-2 text-sm font-medium text-gray-700">Observación (sobrescribir):</label>
+                            <textarea id="bulk-edit-observacion" name="bulk_edit_observacion" rows="3" class="mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm resize-none" disabled></textarea>
+                        </div>
+
+                    </div>
+
+                    <div class="flex justify-end space-x-4 mt-8 pt-5 border-t border-gray-200">
+                        <button type="button" id="cancel-bulk-edit-button" class="bg-gray-300 text-gray-800 px-5 py-2.5 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-1 text-sm font-medium">Cancelar</button>
+                        <button type="submit" id="save-bulk-edit-button" class="bg-blue-600 text-white px-5 py-2.5 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 text-sm font-medium">
+                            <i class="fas fa-save mr-2"></i>Guardar Cambios
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+        <!-- SECCIÓN DE PAGINACIÓN INFERIOR -->
+        <div class="flex justify-end items-center mt-4 space-x-2">
+            <!-- ... (Contenido de paginación inferior como lo tenías) ... -->
+            <button id="prev-page-button-bottom" title="Página Anterior" class="px-3 py-1 border border-gray-300 rounded-md bg-white text-gray-700 text-sm hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed" disabled>< Ant</button>
+            <span class="text-sm text-gray-600">Pág <span id="current-page-display-bottom" class="font-medium">1</span>/<span id="total-pages-display-bottom" class="font-medium">1</span></span>
+            <button id="next-page-button-bottom" title="Página Siguiente" class="px-3 py-1 border border-gray-300 rounded-md bg-white text-gray-700 text-sm hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed" disabled>Sig ></button>
+        </div>
+
+    </div> <!-- FIN de div.container.mx-auto -->
+
+    <!-- MODALES (Asegúrate que están FUERA del div.container principal si quieres que ocupen toda la pantalla) -->
+    <!-- Aunque con tu CSS de .modal y .modal-wrapper, deberían funcionar bien incluso dentro si el container tiene suficiente z-index bajo.
+         Por seguridad y limpieza, es común ponerlos al final del body. -->
+
+    <!-- MODAL DE DETALLES/EDICIÓN DE EQUIPO (ID ÚNICO: equipment-modal) -->
+<div id="equipment-modal" class="modal">
+    <div class="modal-wrapper">
+        <div class="modal-content">
+            <button id="close-modal-button" class="absolute top-4 right-4 text-gray-500 hover:text-gray-800 text-2xl focus:outline-none z-10">×</button>
+            <h2 id="modal-title" class="text-2xl font-semibold mb-6 text-gray-800 border-b border-gray-200 pb-4"></h2>
+            <div id="form-feedback" class="mb-5 p-3 rounded text-sm hidden"></div>
+            
+            <form id="equipment-form" novalidate>
+                <input type="hidden" id="equipment-id" name="equipment_id">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 sm:gap-x-8 gap-y-5">
+
+                    <!-- Tipo Equipo -->
+                    <div class="space-y-1">
+                        <label for="tipo_equipo-select" class="block text-sm font-medium text-gray-700">Tipo Equipo <span class="text-red-500">*</span></label>
+                        <select id="tipo_equipo-select" name="tipo_equipo_select" class="mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"></select>
+                        <input type="text" id="tipo_equipo" name="tipo_equipo" class="hidden mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="Nuevo tipo">
+                        <span id="tipo_equipo-display" class="form-display-value"></span> <!-- NUEVO: Para modo ver -->
+                    </div>
+                    <!-- Marca -->
+                    <div class="space-y-1">
+                        <label for="marca-select" class="block text-sm font-medium text-gray-700">Marca</label>
+                        <select id="marca-select" name="marca_select" class="mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"></select>
+                        <input type="text" id="marca" name="marca" class="hidden mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="Nueva marca">
+                        <span id="marca-display" class="form-display-value"></span> <!-- NUEVO: Para modo ver -->
+                    </div>
+                    <!-- Modelo -->
+                    <div class="space-y-1">
+                        <label for="modelo-select" class="block text-sm font-medium text-gray-700">Modelo</label>
+                        <select id="modelo-select" name="modelo_select" class="mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"></select>
+                        <input type="text" id="modelo" name="modelo" class="hidden mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="Nuevo modelo">
+                        <span id="modelo-display" class="form-display-value"></span> <!-- NUEVO: Para modo ver -->
+                    </div>
+                    <!-- Serial -->
+                    <div class="space-y-1">
+                        <label for="serial" class="block text-sm font-medium text-gray-700">Serial <span class="text-red-500">*</span></label>
+                        <input type="text" id="serial" name="serial" required class="mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                        <span id="serial-display" class="form-display-value"></span> <!-- NUEVO: Para modo ver -->
+                    </div>
+                    <!-- Asignado a -->
+                    <div class="space-y-1">
+                        <label for="asignado_a-select" class="block text-sm font-medium text-gray-700">Asignado a</label>
+                        <select id="asignado_a-select" name="asignado_a_select" class="mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"></select>
+                        <input type="text" id="asignado_a" name="asignado_a" class="hidden mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="Nueva persona">
+                        <span id="asignado_a-display" class="form-display-value"></span> <!-- NUEVO: Para modo ver -->
+                    </div>
+                    <!-- Departamento -->
+                    <div class="space-y-1">
+                        <label for="departamento-select" class="block text-sm font-medium text-gray-700">Departamento</label>
+                        <select id="departamento-select" name="departamento_select" class="mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"></select>
+                        <input type="text" id="departamento" name="departamento" class="hidden mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="Nuevo depto">
+                        <span id="departamento-display" class="form-display-value"></span> <!-- NUEVO: Para modo ver -->
+                    </div>
+                    <!-- Sede (NUEVO CAMPO) -->
+                    <div class="space-y-1">
+                        <label for="sede-select" class="block text-sm font-medium text-gray-700">Sede</label>
+                        <select id="sede-select" name="sede_select" class="mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"></select>
+                        <input type="text" id="sede" name="sede" class="hidden mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="Nombre de la nueva Sede">
+                        <span id="sede-display" class="form-display-value"></span> <!-- NUEVO: Para modo ver -->
+                    </div>
+                    <!-- Estatus -->
+                    <div class="space-y-1">
+                        <label for="estatus" class="block text-sm font-medium text-gray-700">Estatus</label>
+                        <select id="estatus" name="estatus" class="mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                            <option value="Operativo">Operativo</option><option value="En Reparación">En Reparación</option><option value="En Almacén">En Almacén</option>
+                            <option value="Desincorporado">Desincorporado</option><option value="Dañado">Dañado</option></select>
+                        <span id="estatus-display" class="form-display-value"></span> <!-- NUEVO: Para modo ver -->
+                    </div>
+                    <!-- Último Mantenimiento -->
+                    <div class="space-y-1">
+                        <label for="ultimo_mantenimiento" class="block text-sm font-medium text-gray-700">Últ. Mantenimiento</label>
+                        <input type="date" id="ultimo_mantenimiento" name="ultimo_mantenimiento" class="mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                        <span id="ultimo_mantenimiento-display" class="form-display-value"></span> <!-- NUEVO: Para modo ver -->
+                    </div>
+                    <!-- Próximo Mantenimiento -->
+                    <div class="space-y-1">
+                        <label for="proximo_mantenimiento" class="block text-sm font-medium text-gray-700">Próx. Mantenimiento</label>
+                        <input type="date" id="proximo_mantenimiento" name="proximo_mantenimiento" class="mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                        <span id="proximo_mantenimiento-display" class="form-display-value"></span> <!-- NUEVO: Para modo ver -->
+                    </div>
+                    <!-- Observación (ocupa más espacio) -->
+                    <div class="sm:col-span-2 lg:col-span-3 space-y-1">
+                        <label for="observacion" class="block text-sm font-medium text-gray-700">Observación</label>
+                        <textarea id="observacion" name="observacion" rows="3" class="mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm resize-none"></textarea>
+                        <span id="observacion-display" class="form-display-value"></span> <!-- NUEVO: Para modo ver -->
+                    </div>
+                </div>
+                    <div class="flex justify-end space-x-4 mt-8 pt-5 border-t border-gray-200">
+                        <button type="button" id="cancel-modal-button" class="bg-gray-300 text-gray-800 px-5 py-2.5 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-1 sm:text-sm font-medium">Cerrar</button>
+                        <button type="submit" id="save-button" class="bg-blue-600 text-white px-5 py-2.5 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 sm:text-sm font-medium"><i class="fas fa-save mr-2"></i><span id="save-button-text">Guardar</span></button>
+                    </div>
+                </form>
+
+                <div id="maintenance-history-section" class="mt-8 hidden">
+                    <h3 class="text-xl font-semibold mb-4 text-gray-700 border-t border-gray-200 pt-6">Historial de Mantenimientos</h3>
+                    <div id="maintenance-history-feedback" class="mb-3 p-2 rounded text-sm hidden"></div>
+                    <div class="overflow-x-auto max-h-72 border border-gray-200 rounded-md shadow-sm"> <!-- max-h-72 o similar -->
+                        <table class="min-w-full divide-y divide-gray-200 text-sm">
+                            <thead class="bg-gray-100 sticky top-0 z-10">
+                                <tr>
+                                    <th class="px-4 py-2.5 text-left font-medium text-gray-600 uppercase tracking-wider">Fecha</th>
+                                    <th class="px-4 py-2.5 text-left font-medium text-gray-600 uppercase tracking-wider">Tipo</th>
+                                    <th class="px-4 py-2.5 text-left font-medium text-gray-600 uppercase tracking-wider">Descripción</th>
+                                    <th class="px-4 py-2.5 text-left font-medium text-gray-600 uppercase tracking-wider">Registró</th>
+                                </tr>
+                            </thead>
+                            <tbody id="maintenance-history-table-body" class="bg-white divide-y divide-gray-100">
+                                <tr><td colspan="4" class="text-center p-4 text-gray-500 italic">Cargando historial...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL DE REGISTRO DE MANTENIMIENTO (ID ÚNICO: maintenance-modal) -->
+    <div id="maintenance-modal" class="modal">
+        <div class="modal-wrapper">
+            <div class="modal-content">
+                <button id="close-maintenance-modal-button" class="text-gray-500 hover:text-gray-800 text-2xl focus:outline-none">×</button>
+                <h2 id="maintenance-modal-title" class="text-2xl font-semibold mb-6 text-gray-800 border-b border-gray-200 pb-4"></h2>
+                <div id="maintenance-form-feedback" class="mb-5 p-3 rounded text-sm hidden"></div>
+                
+                <form id="maintenance-form" novalidate>
+                    <input type="hidden" id="maintenance-equipment-id" name="maintenance_equipment_id">
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <label for="maintenance-equipment-info" class="block text-sm font-medium text-gray-700">Equipo:</label>
+                            <p id="maintenance-equipment-info" class="mt-1 block w-full px-3 py-2 rounded-md border border-gray-200 bg-gray-100 shadow-sm sm:text-sm text-gray-700 italic">-</p>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                            <div>
+                                <label for="maintenance-fecha-realizado" class="block text-sm font-medium text-gray-700">Fecha Realizado <span class="text-red-500">*</span></label>
+                                <input type="date" id="maintenance-fecha-realizado" name="maintenance_fecha_realizado" required
+                                       class="mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label for="maintenance-tipo" class="block text-sm font-medium text-gray-700">Tipo Mantenimiento</label>
+                                <input type="text" id="maintenance-tipo" name="maintenance_tipo" placeholder="Ej: Preventivo, Correctivo"
+                                       class="mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                            </div>
+                            <div class="md:col-span-2"> <!-- Ocupa dos columnas en md si quieres que esté solo en una fila -->
+                                <label for="maintenance-proximo-meses" class="block text-sm font-medium text-gray-700">Próximo Mtto. en (meses)</label>
+                                <input type="number" id="maintenance-proximo-meses" name="maintenance_proximo_meses" min="0" placeholder="Ej: 3 (0 o vacío para no programar)"
+                                       class="mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                            </div>
+                        </div>
+
+                        <div>
+                            <label for="maintenance-descripcion" class="block text-sm font-medium text-gray-700">Descripción / Notas</label>
+                            <textarea id="maintenance-descripcion" name="maintenance_descripcion" rows="4"
+                                      class="mt-1 block w-full px-3 py-2 rounded-md border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm resize-y"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end space-x-4 mt-8 pt-5 border-t border-gray-200">
+                        <button type="button" id="cancel-maintenance-modal-button" class="bg-gray-300 text-gray-800 px-5 py-2.5 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-1 sm:text-sm font-medium">Cancelar</button>
+                        <button type="submit" id="save-maintenance-button" class="bg-green-600 text-white px-5 py-2.5 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1 sm:text-sm font-medium">
+                            <i class="fas fa-tools mr-2"></i>Guardar Mantenimiento
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- OTROS MODALES (QR, Export, Delete) -->
+    <div id="qr-code-modal" class="modal">
+        <div class="modal-wrapper">
+            <div class="modal-content text-center flex flex-col justify-between" style="min-height: 320px; height: auto;">
+                <div>
+                    <h3 id="qr-modal-title" class="text-lg font-medium text-gray-900 mb-2">Código QR</h3>
+                    <div id="qr-image-container" class="my-3 flex justify-center items-center min-h-[150px]">
+                         <img id="qr-code-image" src="" alt="QR" class="border border-gray-300 max-w-[150px] max-h-[150px] hidden bg-white">
+                         <i id="qr-spinner" class="fas fa-spinner fa-spin text-3xl text-gray-400"></i>
+                    </div>
+                    <p id="qr-modal-info" class="text-xs text-gray-600 mb-3 break-words">Cargando...</p>
+                </div>
+                <button id="close-qr-button" class="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 sm:text-sm font-medium">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="export-choice-modal" class="modal">
+        <div class="modal-wrapper">
+            <div class="modal-content">
+                 <button id="close-export-choice-button" class="text-gray-400 hover:text-gray-600 text-2xl focus:outline-none">×</button>
+                <h3 class="text-lg font-medium text-gray-900 mb-4 text-center">Exportar Vista Actual</h3>
+                <p class="text-sm text-gray-600 mb-6 text-center">Seleccione el formato:</p>
+                <div class="flex flex-col space-y-3">
+                    <button id="export-table-button" class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 sm:text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"><i class="fas fa-table mr-2"></i>Tabla PDF</button>
+                    <button id="export-qr-button" class="w-full bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 sm:text-sm font-medium focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1"><i class="fas fa-qrcode mr-2"></i>Códigos QR PDF</button>
+                </div>
+                <div class="mt-6 text-center">
+                    <button id="cancel-export-choice-button" class="bg-gray-300 text-gray-800 px-5 py-2 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-1 sm:text-sm font-medium">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="delete-confirm-modal" class="modal">
+        <div class="modal-wrapper">
+            <div class="modal-content">
+                 <div class="text-center">
+                     <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
+                        <i class="fas fa-exclamation-triangle text-red-600 text-xl"></i>
+                    </div>
+                    <h3 class="text-lg font-medium text-gray-900">Confirmar Eliminación</h3>
+                    <div class="mt-2 px-7 py-3">
+                        <p id="delete-confirm-message" class="text-sm text-gray-600">¿Está seguro?</p>
+                    </div>
+                 </div>
+                <div class="flex justify-center space-x-4 mt-4">
+                    <button id="cancel-delete-button" class="bg-gray-300 text-gray-800 px-5 py-2 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-1 sm:text-sm font-medium">Cancelar</button>
+                    <button id="confirm-delete-button" class="bg-red-600 text-white px-5 py-2 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 sm:text-sm font-medium">Sí, Eliminar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/logica_index.js?t=2024051601" defer></script> <!-- Cache busting -->
+
+</body>
+</html>

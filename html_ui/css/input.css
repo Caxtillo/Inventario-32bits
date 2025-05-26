@@ -1,0 +1,31 @@
+/* src/css/input.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Puedes añadir tus propios estilos CSS personalizados aquí debajo si lo necesitas */
+/* Por ejemplo, los estilos que tenías en <style> para scrollbar o clases sortable */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { @apply bg-gray-100 dark:bg-gray-700; } /* Ejemplo con @apply */
+::-webkit-scrollbar-thumb { @apply bg-gray-500 rounded; }
+::-webkit-scrollbar-thumb:hover { @apply bg-gray-600; }
+
+th.sortable-header {
+    @apply cursor-pointer relative pr-6; /* pr-6 es padding-right: 1.5rem */
+}
+th.sortable-header:hover {
+    @apply bg-gray-200 dark:bg-gray-600;
+}
+th .sort-icon {
+    @apply absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs;
+     /* right-2 es right: 0.5rem */
+     /* top-1/2 -translate-y-1/2 centra verticalmente */
+     /* text-xs es font-size: 0.75rem */
+}
+ th .sort-icon.active {
+     @apply text-gray-800 dark:text-gray-300;
+ }
+ /* Puedes mover aquí también los estilos .modal, .requires-admin, etc. */
+ .modal { @apply hidden; }
+ .modal.is-active { @apply flex; }
+ .requires-admin, .requires-manager { display: none; }

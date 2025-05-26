@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Usuarios - Inventario</title>
+    <link rel="stylesheet" href="css/output.css">
+    <link href="fa/css/all.min.css" rel="stylesheet">
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <style>
+        /* Estilos Base y Helpers */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+
+        .requires-admin, .requires-manager { display: none; } /* Oculto por JS */
+
+        /* Estilos Modales */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(17, 24, 39, 0.75); /* bg-gray-900 bg-opacity-75 */
+            z-index: 50;
+            overflow: auto;
+        }
+
+        .modal.is-active {
+            display: table !important;
+        }
+
+        .modal-wrapper {
+            display: table-cell;
+            vertical-align: middle;
+            text-align: center;
+        }
+
+        .modal-content {
+            display: inline-block;
+            text-align: left;
+            background-color: white;
+            padding: 1.5rem; /* p-6 */
+            border-radius: 0.5rem; /* rounded-lg */
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* shadow-xl */
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        /* Max-widths específicos */
+        #equipment-modal .modal-content { max-width: 64rem; } /* Para index.html */
+        #qr-code-modal .modal-content { max-width: 20rem; } /* Para index.html */
+        #user-modal .modal-content,
+        #reset-password-modal .modal-content,
+        #delete-user-confirm-modal .modal-content,
+        #success-feedback-modal .modal-content {
+            max-width: 32rem; /* max-w-md para modales de users.html */
+        }
+
+        /* Botón de cerrar dentro de modal-content */
+         .modal-content > button[id^="close-"] {
+             position: absolute;
+             top: 1rem;  /* Ajusta según necesites */
+             right: 1rem; /* Ajusta según necesites */
+             z-index: 10;
+         }
+
+        .form-feedback { min-height: 1.5rem; font-size: 0.875rem; }
+
+        /* Asegurar que el selector de fecha tome el tema */
+        input[type="date"] { color-scheme: light; }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-900 transition-colors duration-300">
+
+    <nav class="bg-white shadow-md p-4 sm:p-8 sticky top-0 z-40 transition-colors duration-300">
+        <div class="container mx-auto flex flex-wrap justify-between items-center">
+            <div class="flex items-center mb-2 sm:mb-0">
+                <img src="assets/logo.png" alt="Logo Empresa" class="h-10 mr-3">
+                <h1 class="text-lg sm:text-xl font-bold text-blue-900 ml-2">GESTIÓN DE USUARIOS</h1>
+            </div>
+            <div class="flex items-center space-x-3 sm:space-x-4">
+                <div class="text-sm text-gray-600 hidden sm:block">
+                    Usuario: <span id="user-role-display">Cargando...</span>
+                </div>
+                <button id="back-to-inventory-button" title="Volver al Inventario"
+                    class="bg-gray-500 text-white px-3 py-1.5 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-1 transition duration-150 text-sm">
+                    <i class="fas fa-arrow-left mr-1"></i> <span class="hidden sm:inline">Inventario</span>
+                </button>
+                <button id="logout-button" title="Cerrar Sesión"
+                    class="bg-red-600 text-white px-3 py-1.5 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 transition duration-150 text-sm">
+                     <i class="fas fa-sign-out-alt mr-1"></i> <span class="hidden sm:inline">Salir</span>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mx-auto mt-6 px-4 pb-8">
+        <div class="mb-6 text-right">
+            <button id="add-user-button" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1 transition duration-150 text-sm font-medium">
+                <i class="fas fa-user-plus mr-1"></i> Agregar Usuario
+            </button>
+        </div>
+
+        <h2 class="text-xl font-semibold text-gray-700 mb-4">Usuarios Registrados</h2>
+        <div class="bg-white rounded-lg shadow overflow-hidden transition-colors duration-300">
+             <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-100">
+                        <tr>
+                            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">ID</th>
+                            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Username</th>
+                            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Rol</th>
+                            <th scope="col" class="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="user-table-body" class="bg-white divide-y divide-gray-200">
+                        <tr><td colspan="4" class="text-center py-6 text-gray-500"><i class="fas fa-spinner fa-spin mr-2"></i>Cargando usuarios...</td></tr>
+                    </tbody>
+                </table>
+             </div>
+        </div>
+    </div>
+
+    <!-- Modal para Agregar/Editar Usuario -->
+    <div id="user-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-75 z-50 px-4 py-6">
+        <div class="modal-wrapper">
+            <div class="bg-white rounded-lg p-6 sm:p-8 w-full max-w-md relative shadow-xl transition-colors duration-300 modal-content">
+                <button id="close-user-modal-button" class="absolute top-4 right-4 text-gray-500 hover:text-gray-800 text-2xl focus:outline-none z-10">×</button>
+                <h2 id="user-modal-title" class="text-xl font-semibold mb-6 text-gray-800 border-b border-gray-200 pb-4">Agregar Usuario</h2>
+                <div id="user-form-feedback" class="form-feedback mb-5 p-3 rounded text-sm hidden"></div>
+                <form id="user-form">
+                    <input type="hidden" id="user-id" name="user_id">
+                    <div class="space-y-5">
+                        <div>
+                            <label for="username" class="block text-sm font-medium text-gray-700 mb-1.5">Username <span class="text-red-500">*</span></label>
+                            <input type="text" id="username" name="username" required class="block w-full px-3 py-2 rounded-md border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 sm:text-sm">
+                        </div>
+                        <div id="password-section">
+                            <label for="password" class="block text-sm font-medium text-gray-700 mb-1.5">Contraseña <span id="password-required-indicator" class="text-red-500">*</span></label>
+                            <input type="password" id="password" name="password" class="block w-full px-3 py-2 rounded-md border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 sm:text-sm">
+                        </div>
+                        <div id="confirm-password-section">
+                            <label for="confirm-password" class="block text-sm font-medium text-gray-700 mb-1.5">Confirmar Contraseña <span id="confirm-password-required-indicator" class="text-red-500">*</span></label>
+                            <input type="password" id="confirm-password" name="confirm-password" class="block w-full px-3 py-2 rounded-md border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 sm:text-sm">
+                        </div>
+                        <div>
+                            <label for="role" class="block text-sm font-medium text-gray-700 mb-1.5">Rol <span class="text-red-500">*</span></label>
+                            <select id="role" name="role" required class="block w-full px-3 py-2 rounded-md border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 sm:text-sm">
+                                <option value="read_only">Solo Lectura</option>
+                                <option value="manager">Gestor</option>
+                                <option value="admin">Administrador</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="flex justify-end space-x-4 mt-8 pt-5 border-t border-gray-200">
+                        <button type="button" id="cancel-user-modal-button" class="bg-gray-300 text-gray-800 px-5 py-2 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-1 transition duration-150 text-sm font-medium">Cancelar</button>
+                        <button type="submit" id="save-user-button" class="bg-blue-600 text-white px-5 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition duration-150 text-sm font-medium"><i class="fas fa-save mr-2"></i>Guardar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Resetear Contraseña -->
+    <div id="reset-password-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-75 z-50 px-4 py-6">
+        <div class="modal-wrapper">
+            <div class="bg-white rounded-lg p-6 sm:p-8 w-full max-w-md relative shadow-xl transition-colors duration-300 modal-content">
+                <button id="close-reset-modal-button" class="absolute top-4 right-4 text-gray-500 hover:text-gray-800 text-2xl focus:outline-none z-10">×</button>
+                <h2 id="reset-modal-title" class="text-xl font-semibold mb-6 text-gray-800 border-b border-gray-200 pb-4">Resetear Contraseña</h2>
+                <div id="reset-form-feedback" class="form-feedback mb-5 p-3 rounded text-sm hidden"></div>
+                <form id="reset-password-form">
+                    <input type="hidden" id="reset-user-id">
+                    <input type="hidden" id="reset-username">
+                    <p id="reset-modal-user-info" class="mb-4 text-sm text-gray-600">Ingrese la nueva contraseña.</p>
+                    <div class="space-y-5">
+                        <div>
+                            <label for="new-password" class="block text-sm font-medium text-gray-700 mb-1.5">Nueva Contraseña <span class="text-red-500">*</span></label>
+                            <input type="password" id="new-password" name="new_password" required minlength="4" class="block w-full px-3 py-2 rounded-md border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 sm:text-sm">
+                        </div>
+                        <div>
+                            <label for="confirm-new-password" class="block text-sm font-medium text-gray-700 mb-1.5">Confirmar Nueva Contraseña <span class="text-red-500">*</span></label>
+                            <input type="password" id="confirm-new-password" name="confirm_new_password" required minlength="4" class="block w-full px-3 py-2 rounded-md border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 sm:text-sm">
+                        </div>
+                    </div>
+                    <div class="flex justify-end space-x-4 mt-8 pt-5 border-t border-gray-200">
+                        <button type="button" id="cancel-reset-modal-button" class="bg-gray-300 text-gray-800 px-5 py-2 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-1 transition duration-150 text-sm font-medium">Cancelar</button>
+                        <button type="submit" id="save-reset-password-button" class="bg-yellow-600 text-white px-5 py-2 rounded-md hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-1 transition duration-150 text-sm font-medium"><i class="fas fa-key mr-2"></i>Establecer Contraseña</button>
+                    </div>
+                </form>
+           </div>
+        </div>
+    </div>
+
+    <!-- Modal de Confirmación para Eliminar Usuario -->
+    <div id="delete-user-confirm-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-75 z-50 px-4 py-6">
+        <div class="modal-wrapper">
+            <div class="bg-white rounded-lg p-6 w-full max-w-md shadow-xl transition-colors duration-300 modal-content">
+                <div class="text-center">
+                    <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
+                        <i class="fas fa-user-times text-red-600 text-xl"></i>
+                    </div>
+                    <h3 class="text-lg leading-6 font-medium text-gray-900">Confirmar Eliminación de Usuario</h3>
+                    <div class="mt-2 px-7 py-3">
+                        <p id="delete-user-confirm-message" class="text-sm text-gray-600">¿Está seguro? Esta acción no se puede deshacer.</p>
+                    </div>
+                </div>
+                <div class="flex justify-center space-x-4 mt-4">
+                    <button id="cancel-delete-user-button" class="bg-gray-300 text-gray-800 px-5 py-2 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-1 transition duration-150 text-sm font-medium">Cancelar</button>
+                    <button id="confirm-delete-user-button" class="bg-red-600 text-white px-5 py-2 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 transition duration-150 text-sm font-medium">Sí, Eliminar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Genérico de Feedback de Éxito -->
+    <div id="success-feedback-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-75 z-50 px-4 py-6">
+        <div class="modal-wrapper">
+            <div class="bg-white rounded-lg p-6 w-full max-w-md shadow-xl transition-colors duration-300 modal-content">
+                 <div class="text-center">
+                     <div id="success-modal-icon-container" class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 mb-4">
+                        <i class="fas fa-check-circle text-green-600 text-xl"></i>
+                     </div>
+                     <h3 id="success-modal-title" class="text-lg leading-6 font-medium text-gray-900">Acción Completada</h3>
+                     <div class="mt-2 px-7 py-3">
+                         <p id="success-modal-message" class="text-sm text-gray-600">La operación se realizó correctamente.</p>
+                     </div>
+                 </div>
+                 <div class="flex justify-center mt-4">
+                     <button id="accept-success-modal-button" class="bg-blue-600 text-white px-5 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition duration-150 text-sm font-medium">
+                         Aceptar
+                     </button>
+                 </div>
+            </div>
+        </div>
+    </div>
+
+<script src="js/logica_users.js" defer></script>
+
+</body>
+</html>
