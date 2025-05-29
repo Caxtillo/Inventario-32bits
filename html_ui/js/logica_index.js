@@ -68,7 +68,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const maintenanceHistorySection = document.getElementById('maintenance-history-section');
     const maintenanceHistoryTableBody = document.getElementById('maintenance-history-table-body');
     const maintenanceHistoryFeedback = document.getElementById('maintenance-history-feedback');
-
+    const maintenanceDaysFilterInput = document.getElementById('maintenance-days-filter');
         // --- NUEVAS REFERENCIAS DOM PARA SELECCIÓN MÚLTIPLE ---
     const selectAllCheckbox = document.getElementById('select-all-checkbox');
     const bulkActionsPanel = document.getElementById('bulk-actions-panel');
@@ -423,23 +423,25 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log("--- applyFiltersAndRender FINALIZADA ---");
     }
 
-    function updateFilteredInfo(isMaintenanceFilter = false) {
-        const searchTerm = searchTermInput?.value?.trim(); // Usar optional chaining
-        let info = "";
-        if (isMaintenanceFilter) {
-            info = "(Filtro: Mantenimiento Pendiente)";
-        } else if (searchTerm) {
-            info = "(Filtro de búsqueda activo)";
-        }
-        
-        // Actualizar el span
-        if (filteredInfoSpan) {
-             filteredInfoSpan.textContent = info;
-             console.log(`  updateFilteredInfo: Mostrando info "${info}"`);
-        } else {
-             console.warn("updateFilteredInfo: filteredInfoSpan no encontrado.");
-        }
+function updateFilteredInfo(isMaintenanceFilter = false, customMessage = "") {
+    const searchTerm = searchTermInput?.value?.trim();
+    let info = "";
+
+    if (customMessage && isMaintenanceFilter) {
+        info = customMessage;
+    } else if (isMaintenanceFilter) {
+        info = "(Filtro: Mantenimiento)"; // Mensaje genérico si no hay customMessage
+    } else if (searchTerm) {
+        info = `(Filtro búsqueda: "${searchTerm}")`;
     }
+
+    if (filteredInfoSpan) {
+         filteredInfoSpan.textContent = info;
+         console.log(`  updateFilteredInfo: Mostrando info "${info}"`);
+    } else {
+         console.warn("updateFilteredInfo: filteredInfoSpan no encontrado.");
+    }
+}
 
     function sortData() {
         if (!sortColumn) return; // No ordenar si no hay columna seleccionada
@@ -480,123 +482,165 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- NUEVA Función Central de Renderizado (reemplaza renderTable) ---
-    function renderPagedTable() {
-        // Verificar si las referencias necesarias existen
-        if (!equipmentTableBody || !itemsShowingSpan || !itemsTotalSpan || !currentPageDisplay || !totalPagesDisplay || typeof updatePaginationControls !== 'function' || typeof updateSortIcons !== 'function' || typeof sortData !== 'function') {
-            console.error("renderPagedTable: Faltan referencias a elementos DOM o funciones helper (equipmentTableBody, spans de conteo, displays de página, updatePaginationControls, updateSortIcons, sortData).");
-            return;
-        }
-    
-        console.log(`--- renderPagedTable INVOCADA ---`);
-        console.log(`  Estado Actual: currentPage=${currentPage}, itemsPerPage=${itemsPerPage}, sortColumn=${sortColumn}, sortDirection=${sortDirection}`);
-        console.log(`  Filtrados Actuales (currentFilteredData): ${currentFilteredData.length} items.`);
-    
-        // 1. Aplicar Ordenamiento a los datos filtrados actuales
-        //    sortData() debe modificar 'currentFilteredData' in-place.
-        sortData(); 
-    
-        // 2. Calcular Paginación basada en los datos filtrados y ordenados
-        const totalItems = currentFilteredData.length;
-        const totalPages = Math.ceil(totalItems / itemsPerPage) || 1; // Asegurar al menos 1 página
-        
-        // Validar y ajustar currentPage si está fuera de rango (ej. después de filtrar)
-        if (currentPage > totalPages) {
-            console.log(`  Ajustando currentPage de ${currentPage} a ${totalPages}`);
-            currentPage = totalPages;
-        }
-         if (currentPage < 1) { // Asegurar que no sea menor a 1
-             currentPage = 1;
-         }
-    
-        const startIndex = (currentPage - 1) * itemsPerPage;
-        // endIndex es exclusivo, así que va hasta el índice anterior al siguiente inicio
-        const endIndex = Math.min(startIndex + itemsPerPage, totalItems); 
-        const itemsToShow = currentFilteredData.slice(startIndex, endIndex);
-    
-        console.log(`  Calculado: totalPages=${totalPages}, startIndex=${startIndex}, endIndex=${endIndex}. Mostrando ${itemsToShow.length} items.`);
-    
-        // 3. Limpiar Tabla y Renderizar Filas
-         equipmentTableBody.innerHTML = '';
-        if(selectAllCheckbox) selectAllCheckbox.checked = false; // Desmarcar "seleccionar todo" al re-renderizar
-        
-        if (itemsToShow.length === 0) {
-            // ... (mensaje de tabla vacía) ...
-            if(selectAllCheckbox) selectAllCheckbox.disabled = true;
-        } else {
-            if(selectAllCheckbox) selectAllCheckbox.disabled = false;
-            // Verificar si todos los equipos DE LA PÁGINA ACTUAL están seleccionados
-            const allOnPageSelected = itemsToShow.every(eq => selectedEquipmentIds.has(eq.id));
-            if(selectAllCheckbox) selectAllCheckbox.checked = allOnPageSelected;
-
-
-            const cellClassBase = "px-4 py-3 whitespace-nowrap text-sm text-center";
-            const cellClassData = `${cellClassBase} text-gray-800`;
-            const cellClassMono = `${cellClassData} font-mono`;
-
-            itemsToShow.forEach((eq, index) => {
-                const globalIndex = startIndex + index;
-                const row = equipmentTableBody.insertRow();
-                row.className = 'hover:bg-gray-100 transition duration-150';
-
-                // Usamos innerHTML para la fila, así que debemos asegurarnos de que el checkbox tenga el ID correcto
-                // y que el listener se añada DESPUÉS de que el elemento exista en el DOM.
-                const isChecked = selectedEquipmentIds.has(eq.id);
-                row.innerHTML = `
-                    <td class="px-2 py-3 text-center"><input type="checkbox" class="row-checkbox form-checkbox h-4 w-4 text-indigo-600 rounded" value="${eq.id}" ${isChecked ? 'checked' : ''}></td>
-                    <td class="${cellClassData}">${globalIndex + 1}</td>
-                    <td class="${cellClassData}">${safe(eq.tipo_equipo)}</td>
-                    <td class="${cellClassData}">${safe(eq.marca)}</td>
-                    <td class="${cellClassData}">${safe(eq.modelo)}</td>
-                    <td class="${cellClassMono}">${safe(eq.serial)}</td>
-                    <td class="${cellClassData}">${safe(eq.asignado_a)}</td>
-                    <td class="${cellClassData}">${safe(eq.departamento)}</td>
-                    <td class="${cellClassData}">${safe(eq.sede)}</td>
-                    <td class="${cellClassData}">
-                        <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${getEstatusClass(eq.estatus)}">
-                            ${safe(eq.estatus) || 'N/A'}
-                        </span>
-                    </td>
-                    <td class="${cellClassData} space-x-1 actions-cell"></td>
-                `;
-
-                // Añadir listener al checkbox de la fila (debe hacerse después de innerHTML)
-                const rowCheckbox = row.querySelector('.row-checkbox');
-                if (rowCheckbox) {
-                    rowCheckbox.addEventListener('change', (event) => {
-                        const eqId = parseInt(event.target.value, 10);
-                        if (event.target.checked) {
-                            selectedEquipmentIds.add(eqId);
-                        } else {
-                            selectedEquipmentIds.delete(eqId);
-                        }
-                        updateBulkActionsPanel();
-                        // Actualizar el checkbox "seleccionar todo" de la cabecera
-                        if(selectAllCheckbox) {
-                            const allOnCurrentPageChecked = itemsToShow.every(item => selectedEquipmentIds.has(item.id));
-                            selectAllCheckbox.checked = allOnCurrentPageChecked;
-                        }
-                    });
-                }
-                
-                // Añadir botones de acción individual
-                const actionsCell = row.querySelector('.actions-cell');
-                if (actionsCell) { addActionsButtons(actionsCell, eq); }
-            });
-        }
-        updateBulkActionsPanel(); // Asegurarse de que el panel se actualice después de renderizar
+function renderPagedTable() {
+    // Verificar si las referencias necesarias existen (como antes)
+    if (!equipmentTableBody || !itemsShowingSpan || !itemsTotalSpan || !currentPageDisplay || !totalPagesDisplay || typeof updatePaginationControls !== 'function' || typeof updateSortIcons !== 'function' || typeof sortData !== 'function') {
+        console.error("renderPagedTable: Faltan referencias a elementos DOM o funciones helper...");
+        return;
     }
-    function updateBulkActionsPanel() {
-        if (selectedEquipmentIds.size > 0) {
-            if(selectedCountSpan) selectedCountSpan.textContent = `${selectedEquipmentIds.size} equipo(s) seleccionado(s)`;
-            if(bulkActionsPanel) bulkActionsPanel.classList.remove('hidden');
-            // Habilitar/deshabilitar botones según permisos y si hay algo seleccionado
-            const canManage = currentUserRole === 'admin' || currentUserRole === 'manager';
-            if(bulkEditButton) bulkEditButton.disabled = !canManage;
-            if(bulkDeleteButton) bulkDeleteButton.disabled = currentUserRole !== 'admin';
-        } else {
-            if(bulkActionsPanel) bulkActionsPanel.classList.add('hidden');
+
+    console.log(`--- renderPagedTable INVOCADA ---`);
+    console.log(`  Estado Actual: currentPage=${currentPage}, itemsPerPage=${itemsPerPage}, sortColumn=${sortColumn}, sortDirection=${sortDirection}`);
+    console.log(`  Filtrados Actuales (currentFilteredData): ${currentFilteredData.length} items.`);
+
+    // 1. Aplicar Ordenamiento
+    sortData();
+
+    // 2. Calcular Paginación basada en los datos filtrados y ordenados
+    //    **********************************************************************
+    //    *** ASEGÚRATE DE QUE ESTA LÍNEA ESTÉ AQUÍ, ANTES DE USAR totalItems ***
+    //    **********************************************************************
+    const totalItems = currentFilteredData.length;
+    //    **********************************************************************
+
+    const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
+
+    // Validar y ajustar currentPage
+    if (currentPage > totalPages) {
+        console.log(`  Ajustando currentPage de ${currentPage} a ${totalPages}`);
+        currentPage = totalPages;
+    }
+    if (currentPage < 1) {
+        currentPage = 1;
+    }
+
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
+    const itemsToShow = currentFilteredData.slice(startIndex, endIndex);
+
+    // Ahora puedes usar totalItems en los logs de forma segura
+    console.log(`PAGINACIÓN DEBUG: currentPage=${currentPage}, itemsPerPage=${itemsPerPage}, totalFiltered=${totalItems}, totalPages=${totalPages}, startIndex=${startIndex}, endIndex=${endIndex}`);
+    console.log(`PAGINACIÓN DEBUG: itemsToShow length=${itemsToShow.length}`);
+
+    // Definir cellBaseClasses (si no lo hiciste globalmente)
+    const cellBaseClasses = "px-4 py-3 text-sm text-left"; // O la clase que uses
+
+    // 3. Limpiar Tabla y Renderizar Filas
+    equipmentTableBody.innerHTML = '';
+    if(selectAllCheckbox) selectAllCheckbox.checked = false;
+
+    if (itemsToShow.length === 0) {
+        // ... (mensaje de tabla vacía) ...
+        equipmentTableBody.innerHTML = `<tr><td colspan="11" class="text-center px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">No se encontraron equipos que coincidan con los filtros.</td></tr>`;
+        if(selectAllCheckbox) selectAllCheckbox.disabled = true;
+    } else {
+        if(selectAllCheckbox) selectAllCheckbox.disabled = false;
+        const allOnPageSelected = itemsToShow.every(eq => selectedEquipmentIds.has(eq.id));
+        if(selectAllCheckbox) selectAllCheckbox.checked = allOnPageSelected;
+
+        itemsToShow.forEach((eq, index) => {
+            const globalIndex = startIndex + index;
+            const row = equipmentTableBody.insertRow();
+            row.className = 'hover:bg-gray-100 dark:hover:bg-gray-700 transition duration-150';
+            const isChecked = selectedEquipmentIds.has(eq.id);
+
+            // Aquí usas cellBaseClasses
+            row.innerHTML = `
+                <td class="px-2 py-3 text-center"><input type="checkbox" class="row-checkbox form-checkbox h-4 w-4 text-indigo-600 dark:text-indigo-400 rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700" value="${eq.id}" ${isChecked ? 'checked' : ''}></td>
+                <td class="${cellBaseClasses} text-gray-800 dark:text-gray-200 text-center whitespace-nowrap">${globalIndex + 1}</td>
+                <td class="${cellBaseClasses} text-gray-800 dark:text-gray-200">${safe(eq.tipo_equipo)}</td>
+                <td class="${cellBaseClasses} text-gray-800 dark:text-gray-200">${safe(eq.marca)}</td>
+                <td class="${cellBaseClasses} text-gray-800 dark:text-gray-200">${safe(eq.modelo)}</td>
+                <td class="${cellBaseClasses} text-gray-800 dark:text-gray-200 text-center font-mono whitespace-nowrap">${safe(eq.serial)}</td>
+                <td class="${cellBaseClasses} text-gray-800 dark:text-gray-200">${safe(eq.asignado_a)}</td>
+                <td class="${cellBaseClasses} text-gray-800 dark:text-gray-200">${safe(eq.departamento)}</td>
+                <td class="${cellBaseClasses} text-gray-800 dark:text-gray-200">${safe(eq.sede)}</td>
+                <td class="${cellBaseClasses} text-gray-800 dark:text-gray-200 text-center whitespace-nowrap">
+                    <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${getEstatusClass(eq.estatus)}">
+                        ${safe(eq.estatus) || 'N/A'}
+                    </span>
+                </td>
+                <td class="${cellBaseClasses} text-gray-800 dark:text-gray-200 text-center whitespace-nowrap space-x-1 actions-cell"></td>
+            `;
+            // ... (resto del bucle, añadir listener a checkbox, añadir botones de acción) ...
+            const rowCheckbox = row.querySelector('.row-checkbox');
+            if (rowCheckbox) {
+                rowCheckbox.addEventListener('change', (event) => {
+                    const eqId = parseInt(event.target.value, 10);
+                    if (event.target.checked) {
+                        selectedEquipmentIds.add(eqId);
+                    } else {
+                        selectedEquipmentIds.delete(eqId);
+                    }
+                    updateBulkActionsPanel();
+                    if(selectAllCheckbox) {
+                        const allOnCurrentPageChecked = itemsToShow.every(item => selectedEquipmentIds.has(item.id));
+                        selectAllCheckbox.checked = allOnCurrentPageChecked;
+                    }
+                });
+            }
+            const actionsCell = row.querySelector('.actions-cell');
+            if (actionsCell) { addActionsButtons(actionsCell, eq); }
+        });
+    }
+
+    // ACTUALIZAR SPANS DE CONTEO
+    if (itemsShowingSpan) {
+        const actualEndIndexToShow = startIndex + itemsToShow.length;
+        itemsShowingSpan.textContent = itemsToShow.length > 0 ? `${startIndex + 1}-${actualEndIndexToShow}` : '0';
+    }
+    if (itemsTotalSpan) {
+        itemsTotalSpan.textContent = totalItems; // totalItems es currentFilteredData.length
+    }
+
+    // LLAMAR A updatePaginationControls
+    updatePaginationControls(totalItems, totalPages);
+    updateSortIcons();
+    updateBulkActionsPanel();
+}
+function updateBulkActionsPanel() {
+    // Primero, verificar si el panel debe mostrarse en absoluto
+    // No mostrar si el rol es 'read_only' O si no hay elementos seleccionados
+    if (currentUserRole === 'read_only' || selectedEquipmentIds.size === 0) {
+        if (bulkActionsPanel) {
+            bulkActionsPanel.classList.add('hidden');
+        }
+        // Si el panel se oculta, no necesitamos hacer nada más con los botones internos.
+        return; 
+    }
+
+    // Si llegamos aquí, el rol NO es 'read_only' Y hay elementos seleccionados
+    if (bulkActionsPanel) { // Asegurarse de que el panel exista
+        if (selectedCountSpan) {
+            selectedCountSpan.textContent = `${selectedEquipmentIds.size} equipo(s) seleccionado(s)`;
+        }
+        bulkActionsPanel.classList.remove('hidden'); // Mostrar el panel
+
+        // Habilitar/deshabilitar botones DENTRO del panel según permisos específicos
+        // (esta parte ya la tenías y es correcta)
+        const canManage = currentUserRole === 'admin' || currentUserRole === 'manager';
+
+        if (bulkEditButton) {
+            bulkEditButton.disabled = !canManage;
+            // Opcional: Añadir/quitar clases de estilo para deshabilitado visualmente si es necesario
+            // if (!canManage) {
+            //     bulkEditButton.classList.add('opacity-50', 'cursor-not-allowed');
+            // } else {
+            //     bulkEditButton.classList.remove('opacity-50', 'cursor-not-allowed');
+            // }
+        }
+
+        if (bulkDeleteButton) {
+            bulkDeleteButton.disabled = currentUserRole !== 'admin';
+            // Opcional: Clases de estilo para deshabilitado
+            // if (currentUserRole !== 'admin') {
+            //     bulkDeleteButton.classList.add('opacity-50', 'cursor-not-allowed');
+            // } else {
+            //     bulkDeleteButton.classList.remove('opacity-50', 'cursor-not-allowed');
+            // }
         }
     }
+}
 
     // --- ACCIÓN: Eliminar Múltiples ---
     async function deleteSelectedEquipment() {
@@ -889,7 +933,7 @@ document.addEventListener('DOMContentLoaded', () => {
             row.className = 'hover:bg-gray-50 transition duration-150';
             const cellClass = "px-4 py-3 whitespace-nowrap text-sm";
             const cellClassGray = `${cellClass} text-gray-600`;
-            const cellClassHeader = `${cellClass} font-medium text-gray-800`;
+            const cellBaseClasses = "px-4 py-3 text-sm";
             const cellClassMono = `${cellClassGray} font-mono`;
     
             // --- NÚMERO DE FILA (Contador + 1) ---
@@ -1001,70 +1045,87 @@ document.addEventListener('DOMContentLoaded', () => {
     } // --- FIN handleImportResult ---
 
     // --- Función para manejar la solicitud de exportación/impresión ---
-    async function handleExportRequest(format) {
-        if (!backend) {
-            displayGeneralFeedback('error', 'Error: No hay conexión con el backend.');
-            return;
-        }
-        // Asumiendo que REPORTLAB_AVAILABLE es una variable global o la verificas en el backend
-        // if (!REPORTLAB_AVAILABLE && format === 'table') { ... } 
-    
-        // --- CORRECCIÓN AQUÍ ---
-        // 1. Usa la variable global que ya tiene los datos filtrados que se muestran en pantalla
-        console.log("handleExportRequest: Obteniendo datos desde la variable global 'currentFilteredData'.");
-        const dataToExport = [...currentFilteredData]; // Usa una copia
-        console.log(`  -> Se exportarán ${dataToExport.length} registros.`);
-        // ----------------------
-    
-        if (!dataToExport || dataToExport.length === 0) {
-            displayGeneralFeedback('info', 'No hay datos en la vista actual para exportar.');
-            if (closeExportChoiceModal) closeExportChoiceModal(); // Cerrar modal elección
-            return;
-        }
-    
-        console.log(`Solicitando exportación de ${dataToExport.length} registros en formato: ${format}`);
-        if (closeExportChoiceModal) closeExportChoiceModal(); // Cerrar modal elección
-        displayImportFeedback('info', `Generando archivo PDF (${format})... Espere por favor.`);
-    
-        try {
-            // 2. Envía los datos CORRECTOS (dataToExport) al backend
-            const jsonStringResult = await backend.export_view_to_pdf(dataToExport, format); 
-            
-            console.log("Resultado STRING del backend (export_view_to_pdf):", jsonStringResult); 
-            console.log("Tipo de resultado STRING:", typeof jsonStringResult); 
-    
-            let result = null; 
-            
-            if (typeof jsonStringResult === 'string' && jsonStringResult.trim() !== '') {
-                try {
-                    result = JSON.parse(jsonStringResult); 
-                    console.log("Objeto JS parseado desde JSON string:", result); 
-                } catch (parseError) {
-                    console.error("JS: Error parseando JSON string del backend:", parseError, "String recibido:", jsonStringResult);
-                }
-            } else {
-                 console.warn("JS: Se recibió una respuesta vacía o no string del backend para exportación.");
-            }
-    
-            console.log("handleExportRequest: ANTES de llamar a displayImportFeedback, result es:", JSON.stringify(result)); 
-    
-            if (result && result.success) { 
-                console.log("handleExportRequest: Llamando displayImportFeedback para ÉXITO...");
-                displayImportFeedback('success', result.message || 'Archivo PDF generado con éxito.', result); 
-            } else { 
-                console.log("handleExportRequest: Llamando displayImportFeedback para ERROR/FALLO...");
-                let errorMessage = 'Error desconocido al generar el archivo PDF.';
-                 if (result && result.message) { errorMessage = result.message; }
-                 else if (result === null) { errorMessage = 'No se recibió respuesta válida del servidor para la exportación.'; } 
-                 else if (result && result.success === false) { errorMessage = result.message || 'El servidor indicó un fallo en la exportación.'; }
-                displayImportFeedback('error', errorMessage, result || {}); 
-            }
-    
-        } catch (error) {
-            console.error(`Error al llamar a backend.export_view_to_pdf (${format}):`, error);
-            displayImportFeedback('error', `Error de comunicación al exportar PDF: ${error.message || error}`, {});
-        }
+async function handleExportRequest(format) { // format es 'table' o 'qr'
+    if (!backend || typeof backend.export_view_to_pdf !== 'function') {
+        displayImportFeedback('error', 'Error: Servicio de exportación no disponible o no conectado.');
+        if (closeExportChoiceModal) closeExportChoiceModal();
+        return;
     }
+
+    let dataToExport = [];
+    let exportContextMessage = "la vista actual"; // Mensaje por defecto
+
+    if (selectedEquipmentIds.size > 0) {
+        // Si hay equipos seleccionados, filtrar allEquipmentData para obtener los objetos completos
+        dataToExport = allEquipmentData.filter(eq => selectedEquipmentIds.has(eq.id));
+        exportContextMessage = `${selectedEquipmentIds.size} equipo(s) seleccionado(s)`;
+        
+        console.log(`handleExportRequest: Se exportarán ${dataToExport.length} de ${selectedEquipmentIds.size} IDs seleccionados.`);
+
+        if (dataToExport.length !== selectedEquipmentIds.size) {
+            console.warn("handleExportRequest: Algunos IDs seleccionados no se encontraron en allEquipmentData. Esto podría indicar datos desactualizados.");
+            // Podrías decidir mostrar un aviso más fuerte aquí si quieres.
+        }
+    } else {
+        // Si no hay selección, exportar currentFilteredData (la vista actualmente visible en la tabla)
+        dataToExport = [...currentFilteredData]; // Crear una copia para no modificar el original
+        console.log(`handleExportRequest: No hay selección. Se exportarán ${dataToExport.length} equipos de la vista actual.`);
+    }
+
+    if (!dataToExport || dataToExport.length === 0) {
+        let msg = `No hay datos en ${exportContextMessage} para exportar.`;
+        if(selectedEquipmentIds.size > 0 && dataToExport.length === 0){
+            msg = `Los equipos seleccionados no pudieron ser procesados. Por favor, intente de nuevo o deseleccione y reintente.`;
+        }
+        displayImportFeedback('info', msg);
+        if (closeExportChoiceModal) closeExportChoiceModal();
+        return;
+    }
+
+    const reportTypeForMessage = format === 'qr' ? 'Códigos QR' : 'Tabla de Equipos';
+    console.log(`Solicitando exportación de ${dataToExport.length} registros (${exportContextMessage}) en formato PDF de ${reportTypeForMessage}`);
+    
+    if (closeExportChoiceModal) closeExportChoiceModal();
+    displayImportFeedback('info', `Generando PDF (${reportTypeForMessage})... Espere por favor. Esto puede tardar unos momentos.`);
+
+    try {
+        // Enviar la lista de objetos de equipo completos al backend
+        const jsonStringResult = await backend.export_view_to_pdf(dataToExport, format);
+        
+        console.log("handleExportRequest: Respuesta STRING del backend (export_view_to_pdf):", jsonStringResult);
+        let result = null;
+        
+        if (typeof jsonStringResult === 'string' && jsonStringResult.trim() !== '') {
+            try {
+                result = JSON.parse(jsonStringResult);
+                console.log("handleExportRequest: Objeto JS parseado:", result);
+            } catch (parseError) {
+                console.error("JS: Error parseando JSON string de respuesta de exportación:", parseError, "String recibido:", jsonStringResult);
+                // Caerá al bloque de error genérico de abajo
+            }
+        } else {
+             console.warn("JS: Se recibió una respuesta vacía o no string del backend para exportación.");
+        }
+
+        if (result && result.success) {
+            console.log("handleExportRequest: Exportación exitosa según backend.");
+            // displayImportFeedback ahora debería manejar la lógica del botón "Abrir" si result.filepath existe.
+            displayImportFeedback('success', result.message || `Archivo PDF (${reportTypeForMessage}) generado correctamente.`, result);
+        } else {
+            console.error("handleExportRequest: Exportación fallida según backend o respuesta inválida.");
+            let errorMessage = 'Error desconocido al generar el archivo PDF.';
+            if (result && result.message) { errorMessage = result.message; }
+            else if (result === null && typeof jsonStringResult === 'string') { errorMessage = 'Respuesta inválida del servidor (fallo de parseo).';}
+            else if (result === null) { errorMessage = 'No se recibió respuesta válida del servidor para la exportación.'; }
+            else if (result && result.success === false) { errorMessage = result.message || 'El servidor indicó un fallo en la exportación.'; }
+            displayImportFeedback('error', errorMessage, result || {});
+        }
+
+    } catch (error) { // Error en la llamada `await backend.export_view_to_pdf`
+        console.error(`Error EXCEPCIÓN al llamar a backend.export_view_to_pdf (formato ${format}):`, error);
+        displayImportFeedback('error', `Error de comunicación al exportar PDF: ${error.message || 'Error desconocido'}`, {});
+    }
+}
     
     const REPORTLAB_AVAILABLE = true;
     // --- Añadir al final del archivo, junto a los otros addEventListener ---
@@ -1097,36 +1158,35 @@ document.addEventListener('DOMContentLoaded', () => {
          console.warn("El input de archivo Excel (#excel-file-input) no se encontró.");
     }
 
-    function resetForm() {
-        console.log("resetForm called: Restableciendo el formulario y la UI a estado inicial (todo oculto).");
-        if (equipmentForm) equipmentForm.reset();
-        editingEquipmentId = null;
-        isViewingOnly = false;
-        if (equipmentIdInput) equipmentIdInput.value = '';
-        if (modalTitle) modalTitle.textContent = 'Agregar Nuevo Equipo';
-        if (saveButtonText) saveButtonText.textContent = 'Guardar';
-        if (formFeedback) formFeedback.classList.add('hidden');
+function resetForm() {
+    console.log("resetForm called: Restableciendo el formulario.");
+    if (equipmentForm) equipmentForm.reset(); // Esto ya debería poner los selects a su primera opción si es ""
+    editingEquipmentId = null;
+    isViewingOnly = false;
+    if (equipmentIdInput) equipmentIdInput.value = '';
+    if (modalTitle) modalTitle.textContent = 'Agregar Nuevo Equipo';
+    if (saveButtonText) saveButtonText.textContent = 'Guardar';
+    if (formFeedback) formFeedback.classList.add('hidden');
 
-        // Asegurar que todos los selects, inputs y spans estén inicialmente ocultos y vacíos
-        Object.keys(formInputs).forEach(fieldName => {
-            const inputElement = formInputs[fieldName];
-            const selectElement = formSelects[fieldName];
-            const displaySpan = formDisplaySpans[fieldName];
+    Object.keys(formSelects).forEach(fieldName => {
+        const selectElement = formSelects[fieldName];
+        const inputElement = formInputs[fieldName]; // El input de texto asociado
+        const displaySpan = formDisplaySpans[fieldName];
 
-            if (selectElement) {
-                selectElement.value = "";
-                selectElement.classList.add('hidden'); // Siempre oculto por defecto
-            }
-            if (inputElement) {
-                inputElement.value = '';
-                inputElement.classList.add('hidden'); // Siempre oculto por defecto
-                inputElement.required = (fieldName === 'serial' || fieldName === 'tipo_equipo');
-            }
-            if (displaySpan) {
-                displaySpan.textContent = '';
-                displaySpan.classList.remove('is-active'); // <--- CRÍTICO: Remover esta clase, no añadir hidden
-            }
-        });
+        if (selectElement) {
+            selectElement.value = ""; // <-- CLAVE: Establecer a la opción vacía
+            selectElement.classList.add('hidden'); // Ocultar para setFormEnabled
+        }
+        if (inputElement) {
+            inputElement.value = '';
+            inputElement.classList.add('hidden'); // Ocultar para setFormEnabled
+            // inputElement.required = (fieldName === 'serial' || fieldName === 'tipo_equipo'); // Esto lo maneja setFormEnabled
+        }
+        if (displaySpan) {
+            displaySpan.textContent = '';
+            displaySpan.classList.remove('is-active');
+        }
+    });
 
         // Asegurar que los inputs directos también estén ocultos por defecto
         const directInputs = ['serial', 'estatus', 'ultimo_mantenimiento', 'proximo_mantenimiento', 'observacion'];
@@ -1158,173 +1218,176 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- MODIFICAR openEditModal() ---
-    function openEditModal(equipment) {
-        console.log("openEditModal called with:", equipment);
-        if (currentUserRole !== 'admin' && currentUserRole !== 'manager') { displayGeneralFeedback('error', 'No tiene permiso para editar.'); return; }
-        if (!equipmentModal) { console.error("Modal element not found!"); return; }
+async function openEditModal(equipment) {
+    console.log("openEditModal (nuevo enfoque) llamado con:", equipment);
+    if (currentUserRole !== 'admin' && currentUserRole !== 'manager') { /*...*/ return; }
+    if (!equipmentModal /*... y otras refs ...*/) { /*...*/ return; }
 
-        resetForm(); // Limpia y resetea la visibilidad a "todo oculto"
-        editingEquipmentId = equipment.id;
-        if (equipmentIdInput) equipmentIdInput.value = equipment.id;
-        if (modalTitle) modalTitle.textContent = `Editar Equipo ID: ${equipment.id}`;
-        if (saveButtonText) saveButtonText.textContent = 'Actualizar Equipo';
-        
-        fillForm(equipment); // Llenar con datos
-        loadAllSuggestions(); // Refrescar sugerencias
-        setFormEnabled(true); // Establece la visibilidad para "Editar": inputs/selects visibles, spans ocultos.
-        
-        showModal(equipmentModal);
-        if(formInputs.tipo_equipo) formInputs.tipo_equipo.focus();
+    resetForm();
+    editingEquipmentId = equipment.id;
+    isViewingOnly = false;
+    if (equipmentIdInput) equipmentIdInput.value = equipment.id;
+    if (modalTitle) modalTitle.textContent = `Editar Equipo ID: ${equipment.id}`;
+    if (saveButtonText) saveButtonText.textContent = 'Actualizar Equipo';
+
+    // Paso 1: Llenar campos directos y spans de display
+    fillForm(equipment); // Esta versión simplificada llena serial, estatus, fechas, obs, y TODOS los spans.
+    console.log("openEditModal: fillForm (simplificado) completado.");
+
+    // Paso 2: Poblar CADA select dinámico y ajustar su valor Y el valor de su input de texto asociado.
+    console.log("openEditModal: Poblando y ajustando selects y sus inputs de texto...");
+    try {
+        await Promise.all([
+            populateSelectWithNewOption(formSelects.tipo_equipo, formInputs.tipo_equipo, 'get_distinct_tipos_equipo', equipment.tipo_equipo),
+            populateSelectWithNewOption(formSelects.marca,       formInputs.marca,       'get_distinct_marcas',       equipment.marca),
+            populateSelectWithNewOption(formSelects.modelo,      formInputs.modelo,      'get_distinct_modelos',      equipment.modelo),
+            populateSelectWithNewOption(formSelects.asignado_a,  formInputs.asignado_a,  'get_distinct_asignados',  equipment.asignado_a),
+            populateSelectWithNewOption(formSelects.departamento,formInputs.departamento,'get_distinct_departamentos',equipment.departamento),
+            populateSelectWithNewOption(formSelects.sede,        formInputs.sede,        'get_distinct_sedes',        equipment.sede)
+        ]);
+        console.log("openEditModal: Todos los selects y sus inputs de texto asociados están listos.");
+    } catch (error) {
+        console.error("openEditModal: Error durante populateSelectWithNewOption en Promise.all:", error);
+        displayFormFeedback('error', 'Error crítico al cargar opciones. No se puede continuar.');
+        return; // Detener si la carga de opciones falla
     }
 
-    // --- MODIFICAR openViewModal() ---
-    async function openViewModal(equipment) {
-        console.log("openViewModal called with:", equipment);
-        if (!equipmentModal) { console.error("Modal de equipo no encontrado!"); return; }
+    // Paso 3: Aplicar visibilidad y habilitación.
+    // setFormEnabled ahora solo necesita mirar select.value para decidir sobre el input de texto.
+    setFormEnabled(true);
+    console.log("openEditModal: setFormEnabled(true) completado.");
 
-        resetForm(); // Limpia y resetea la visibilidad a "todo oculto"
-        isViewingOnly = true; // Establecer estado de solo lectura
-        editingEquipmentId = equipment.id;
-        if (equipmentIdInput) equipmentIdInput.value = equipment.id;
-        if (modalTitle) modalTitle.textContent = `Detalles Equipo ID: ${equipment.id} (${safe(equipment.tipo_equipo)} - ${safe(equipment.serial)})`;
-        
-        fillForm(equipment); // Llenar con datos
-        // NOTA: setFormEnabled(false) ahora activará los spans y ocultará lo demás.
-        setFormEnabled(false); 
-        
-        if (maintenanceHistorySection) maintenanceHistorySection.classList.remove('hidden');
-        await loadAndRenderMaintenanceHistory(equipment.id);
-
-        showModal(equipmentModal);
+    showModal(equipmentModal);
+    // Enfocar el primer campo editable visible
+    if (formSelects.tipo_equipo && !formSelects.tipo_equipo.classList.contains('hidden')) {
+        formSelects.tipo_equipo.focus();
+    } else if (formInputs.tipo_equipo && !formInputs.tipo_equipo.classList.contains('hidden')) {
+        formInputs.tipo_equipo.focus();
+    } else if (formInputs.serial) {
+        formInputs.serial.focus();
     }
+    console.log("openEditModal: Modal mostrado y foco establecido.");
+}
 
 
     // --- fillForm(equipment) -- Esta función solo llena los valores, NO CONTROLA VISIBILIDAD ---
-    function fillForm(equipment) {
-        console.log("fillForm called: Llenando formulario con datos de equipo.");
+function fillForm(equipment) {
+    console.log("fillForm (simplificado) llamado.");
 
-        // Campos directos (serial, estatus, fechas, observacion)
-        const directFields = ['serial', 'estatus', 'ultimo_mantenimiento', 'proximo_mantenimiento', 'observacion'];
-        directFields.forEach(fieldName => {
-            const inputElement = formInputs[fieldName];
-            const displaySpan = formDisplaySpans[fieldName];
-            const value = safe(equipment[fieldName]);
+    // Campos directos (sin select dinámico asociado O son selects simples como Estatus)
+    // Nota: formInputs.estatus ES un select, pero no usa populateSelectWithNewOption de la misma manera
+    const directFieldsAndSimpleSelects = {
+        serial: formInputs.serial,
+        estatus: formInputs.estatus, // Es un <select> pero se llena directamente
+        ultimo_mantenimiento: formInputs.ultimo_mantenimiento,
+        proximo_mantenimiento: formInputs.proximo_mantenimiento,
+        observacion: formInputs.observacion
+    };
 
-            if (fieldName.includes('mantenimiento')) { // Aplicar formato de fecha para campos de mantenimiento
-                if (inputElement) inputElement.value = value; // input type="date" sigue con YYYY-MM-DD
-                if (displaySpan) displaySpan.textContent = formatIsoDateToDMY(value) || 'N/A'; // Formato DD/MM/YYYY para display
-            } else { // Para otros campos no-fecha
-                if (inputElement) inputElement.value = value;
-                if (displaySpan) displaySpan.textContent = value || 'N/A';
-            }
-        });
-    
-        // Campos con Select + Input (tipo_equipo, marca, modelo, asignado_a, departamento, sede)
-        const fieldsWithSelect = ['tipo_equipo', 'marca', 'modelo', 'asignado_a', 'departamento', 'sede']; 
-        fieldsWithSelect.forEach(fieldName => {
-            const selectElement = formSelects[fieldName];
-            const inputElement = formInputs[fieldName];
-            const displaySpan = formDisplaySpans[fieldName];
-            const equipmentValue = safe(equipment[fieldName]);
-            
-            // Llenar el span de display SIEMPRE
-            if (displaySpan) displaySpan.textContent = equipmentValue || 'N/A';
+    Object.keys(directFieldsAndSimpleSelects).forEach(fieldName => {
+        const inputElement = directFieldsAndSimpleSelects[fieldName];
+        const displaySpan = formDisplaySpans[fieldName];
+        const value = safe(equipment[fieldName]);
 
-            if (selectElement && inputElement) {
-                const optionExists = Array.from(selectElement.options).some(opt => opt.value === equipmentValue && opt.value !== '__nuevo__' && opt.value !== "");
-    
-                if (optionExists) {
-                    selectElement.value = equipmentValue;
-                    inputElement.value = ''; // Limpiar input de texto si el valor existe en el select
-                } else if (equipmentValue) { // Hay valor, pero no está en la lista (es un valor "nuevo")
-                    selectElement.value = '__nuevo__';
-                    inputElement.value = equipmentValue; // Poner el valor en el input de texto
-                } else { // No hay valor (equipmentValue es vacío o null)
-                    selectElement.value = ""; // Seleccionar "-- Seleccione --"
-                    inputElement.value = ''; // Limpiar input de texto
-                }
-            } else {
-                console.warn(`fillForm: Elementos para '${fieldName}' (select/input) no encontrados. Solo se llenará el span.`);
-            }
-        });
-    }
+        if (inputElement) {
+            inputElement.value = value;
+        }
+        if (displaySpan) {
+            displaySpan.textContent = fieldName.includes('mantenimiento') ? (formatIsoDateToDMY(value) || 'N/A') : (value || 'N/A');
+        }
+    });
+
+    // Llenar SOLO los spans de display para campos con selects dinámicos
+    const fieldsWithDynamicSelect = ['tipo_equipo', 'marca', 'modelo', 'asignado_a', 'departamento', 'sede'];
+    fieldsWithDynamicSelect.forEach(fieldName => {
+        const displaySpan = formDisplaySpans[fieldName];
+        const equipmentValue = safe(equipment[fieldName]);
+        if (displaySpan) {
+            displaySpan.textContent = equipmentValue || 'N/A';
+        }
+    });
+}
 
     // --- populateSelectWithNewOption (con la corrección de possibleValues) ---
-    async function populateSelectWithNewOption(selectElement, inputElement, backendFunctionName, includeSelectOption = true) {
-        if (!backend || !selectElement || !backend[backendFunctionName] || typeof backend[backendFunctionName] !== 'function') {
-            console.error(`populateSelectWithNewOption: Invalid args for ${backendFunctionName}`);
-            return;
-        }
-    
-        console.log(`Poblando select '${selectElement.id}' (input: '${inputElement?.id || "N/A"}') llamando a backend.${backendFunctionName}...`);
-        try {
-            const rawResponse = await backend[backendFunctionName]();
-            let values = [];
-            if (rawResponse && typeof rawResponse === 'string') {
-                 try { values = JSON.parse(rawResponse); } catch (e) { console.error("Error parsing JSON", e); }
-            } else if (Array.isArray(rawResponse)) { values = rawResponse; }
-            if (!Array.isArray(values)) { values = []; }
-    
-            const currentValue = selectElement.value; // Guardar valor actual
-            selectElement.innerHTML = ''; // Limpiar select
-    
-            // 1. Opción "-- Seleccione --"
-            if (includeSelectOption) {
-                const selectOpt = document.createElement('option');
-                selectOpt.value = "";
-                let placeholderText = selectElement.id.replace('bulk-edit-', '').replace('-select', '').replace('-', ' ');
-                placeholderText = placeholderText.charAt(0).toUpperCase() + placeholderText.slice(1);
-                selectOpt.textContent = `-- Seleccione ${placeholderText} --`;
-                selectElement.appendChild(selectOpt);
-            }
-            
-            // 2. Opción "-- Nuevo ... --"
-            if (inputElement) { // Solo añadir opción "Nuevo" si hay un input de texto asociado
-                const newOpt = document.createElement('option');
-                newOpt.value = "__nuevo__"; 
-                let newOptionText = selectElement.id.replace('bulk-edit-', '').replace('-select', '').replace('-', ' ');
-                newOptionText = newOptionText.charAt(0).toUpperCase() + newOptionText.slice(1);
-                newOpt.textContent = `-- Nuevo ${newOptionText} --`; 
-                selectElement.appendChild(newOpt);
-            }
-    
-            // 3. Opciones de la base de datos (ordenadas)
-            const validValues = [...new Set(values)].filter(v => v !== null && v !== undefined && String(v).trim() !== '').sort((a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: 'base' }));
-            validValues.forEach(value => {
-                const option = document.createElement('option');
-                option.value = String(value).trim();
-                option.textContent = String(value).trim();
-                selectElement.appendChild(option);
-            });
-    
-            // Declarar possibleValues antes de usar
-            const possibleValues = ["", "__nuevo__"].concat(validValues.map(String)); 
-
-            // Restaurar valor previo si aún existe en las opciones, o dejar vacío
-            if (possibleValues.includes(currentValue)) { 
-                selectElement.value = currentValue;
-            } else {
-                selectElement.value = "";
-            }
-            
-            // CRÍTICO: AL FINALIZAR EL POBLAMIENTO, SIEMPRE OCULTAR EL INPUT DE TEXTO ASOCIADO AL SELECT
-            // Su visibilidad la gestionará el listener del checkbox.
-            if (inputElement) {
-                inputElement.classList.add('hidden');
-                inputElement.value = '';
-                inputElement.required = false; 
-            }
-    
-        } catch (error) {
-            console.error(`Error al poblar select '${selectElement.id}' desde ${backendFunctionName}:`, error);
-            if (selectElement) {
-                selectElement.innerHTML = `<option value="">-- Error al cargar --</option>`;
-                selectElement.classList.remove('bg-gray-100', 'cursor-not-allowed'); // Asegurar que no se quede deshabilitado visualmente
-                selectElement.disabled = false; // Asegurar que no se quede deshabilitado funcionalmente
-            }
-        }
+ async function populateSelectWithNewOption(selectElement, inputElement, backendFunctionName, equipmentValueForThisField = null, includeSelectOption = true) {
+    if (!backend || !selectElement || /* !inputElement || */ // inputElement puede ser null para bulk-edit
+        !backend[backendFunctionName] || typeof backend[backendFunctionName] !== 'function') {
+        console.error(`populateSelectWithNewOption: Invalid args for ${backendFunctionName} (select: ${selectElement?.id})`);
+        if(selectElement) selectElement.innerHTML = `<option value="">-- Error --</option>`;
+        return;
     }
 
+    console.log(`Poblando select '${selectElement.id}' (input: '${inputElement?.id}'). Backend: ${backendFunctionName}. Valor equipo: '${equipmentValueForThisField}'`);
+
+    try {
+        const rawResponse = await backend[backendFunctionName]();
+        let optionsFromDb = []; // Renombrado para claridad
+        if (rawResponse && typeof rawResponse === 'string') {
+            try { optionsFromDb = JSON.parse(rawResponse); } catch (e) { console.error("Error parsing JSON", e); }
+        } else if (Array.isArray(rawResponse)) { optionsFromDb = rawResponse; }
+        if (!Array.isArray(optionsFromDb)) { optionsFromDb = []; }
+
+        selectElement.innerHTML = ''; // Limpiar select
+
+        if (includeSelectOption) {
+            const selectOpt = document.createElement('option');
+            selectOpt.value = "";
+            let placeholderText = inputElement ? inputElement.name.replace(/_/g, ' ') : selectElement.id.replace(/-select$/, '').replace(/-/g, ' ');
+            placeholderText = placeholderText.charAt(0).toUpperCase() + placeholderText.slice(1);
+            selectOpt.textContent = `-- Seleccione ${placeholderText} --`;
+            selectElement.appendChild(selectOpt);
+        }
+
+        // Opción "-- Nuevo ... --" (solo si hay un inputElement asociado, como en el form principal)
+        if (inputElement) {
+            const newOpt = document.createElement('option');
+            newOpt.value = "__nuevo__";
+            let newOptionText = inputElement.name.replace(/_/g, ' ');
+            newOptionText = newOptionText.charAt(0).toUpperCase() + newOptionText.slice(1);
+            newOpt.textContent = `-- Nuevo ${newOptionText} --`;
+            selectElement.appendChild(newOpt);
+        }
+
+        const validOptionsFromDb = [...new Set(optionsFromDb)]
+            .filter(v => v !== null && v !== undefined && String(v).trim() !== '')
+            .sort((a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: 'base' }));
+
+        validOptionsFromDb.forEach(value => {
+            const option = document.createElement('option');
+            option.value = String(value).trim();
+            option.textContent = String(value).trim();
+            selectElement.appendChild(option);
+        });
+
+        // --- Lógica de Selección ---
+        const currentEquipmentValueTrimmed = equipmentValueForThisField ? String(equipmentValueForThisField).trim() : null;
+
+        if (currentEquipmentValueTrimmed && validOptionsFromDb.includes(currentEquipmentValueTrimmed)) {
+            // El valor del equipo existe como una opción en la BD
+            selectElement.value = currentEquipmentValueTrimmed;
+            console.log(`  '${selectElement.id}': Valor '${currentEquipmentValueTrimmed}' encontrado en opciones. Seleccionado.`);
+        } else if (currentEquipmentValueTrimmed && inputElement) { // Solo puede ser "nuevo" si hay input de texto
+            // El valor del equipo NO existe en las opciones de la BD, pero SÍ tiene un valor (y hay input)
+            selectElement.value = "__nuevo__";
+            console.log(`  '${selectElement.id}': Valor '${currentEquipmentValueTrimmed}' NO encontrado. Seleccionado '__nuevo__'.`);
+        } else {
+            // No hay valor para el equipo, o no hay input de texto (ej. bulk edit sin input)
+            selectElement.value = ""; // Default a "-- Seleccione --"
+            console.log(`  '${selectElement.id}': Sin valor o sin input. Seleccionado ''.`);
+        }
+
+        // NO se manipula la visibilidad o el valor del inputElement aquí.
+        // fillForm ya puso el valor en inputElement.
+        // setFormEnabled se encargará de la visibilidad.
+
+    } catch (error) {
+        console.error(`Error al poblar select '${selectElement.id}' desde ${backendFunctionName}:`, error);
+        if (selectElement) {
+            selectElement.innerHTML = `<option value="">-- Error al cargar --</option>`;
+            selectElement.value = "";
+        }
+    }
+}
 
     // Al cerrar el modal de equipo, ocultar el historial
     function closeModal() { // Modal de equipo
@@ -1334,38 +1397,72 @@ document.addEventListener('DOMContentLoaded', () => {
         if (maintenanceHistoryTableBody) maintenanceHistoryTableBody.innerHTML = '<tr><td colspan="4" class="text-center p-4 text-gray-500">Cargando historial...</td></tr>'; // Resetear
         if (maintenanceHistoryFeedback) maintenanceHistoryFeedback.classList.add('hidden');
     }
-        function resetMaintenanceForm() {
-        if (maintenanceForm) maintenanceForm.reset();
-        if (maintenanceEquipmentIdInput) maintenanceEquipmentIdInput.value = '';
-        if (maintenanceEquipmentInfo) maintenanceEquipmentInfo.textContent = '-';
-        currentEquipmentForMaintenance = null;
-        if (maintenanceFormFeedback) {
-            maintenanceFormFeedback.classList.add('hidden');
-            maintenanceFormFeedback.textContent = '';
-        }
-        // Poner fecha actual por defecto
-        if(maintenanceFechaRealizadoInput) maintenanceFechaRealizadoInput.valueAsDate = new Date();
+    function resetMaintenanceForm() {
+    if (maintenanceForm) maintenanceForm.reset(); // Limpia la mayoría de los campos
+
+    if (maintenanceEquipmentIdInput) maintenanceEquipmentIdInput.value = '';
+    if (maintenanceEquipmentInfo) maintenanceEquipmentInfo.textContent = '-';
+    currentEquipmentForMaintenance = null;
+
+    if (maintenanceFormFeedback) {
+        maintenanceFormFeedback.classList.add('hidden');
+        maintenanceFormFeedback.textContent = '';
     }
+
+    // Poner fecha actual por defecto para Fecha Realizado
+    if(maintenanceFechaRealizadoInput) {
+        maintenanceFechaRealizadoInput.valueAsDate = new Date();
+    }
+
+    // --- NUEVO: Establecer valores por defecto ---
+    if (maintenanceTipoInput) {
+        maintenanceTipoInput.value = "Programado"; // Valor por defecto para Tipo Mantenimiento
+    }
+    if (maintenanceProximoMesesInput) {
+        maintenanceProximoMesesInput.value = "3";    // Valor por defecto para Próximo en Meses
+    }
+    // --- FIN NUEVO ---
+}
+
 
     function openMaintenanceModal(equipment) {
-        if (currentUserRole !== 'admin' && currentUserRole !== 'manager') {
-            displayGeneralFeedback('error', 'Permiso denegado.'); // Usar un feedback general
-            return;
-        }
-        if (!maintenanceModal || !equipment) {
-            console.error("Modal de mantenimiento o datos del equipo no disponibles.");
-            return;
-        }
-        resetMaintenanceForm();
-        currentEquipmentForMaintenance = equipment; // Guardar el equipo actual
-        if (maintenanceEquipmentIdInput) maintenanceEquipmentIdInput.value = equipment.id;
-        if (maintenanceModalTitle) maintenanceModalTitle.textContent = `Registrar Mantenimiento para ID: ${equipment.id}`;
-        if (maintenanceEquipmentInfo) maintenanceEquipmentInfo.textContent = `${safe(equipment.tipo_equipo)} - Serial: ${safe(equipment.serial)}`;
-        
-        showModal(maintenanceModal);
-        if(maintenanceFechaRealizadoInput) maintenanceFechaRealizadoInput.focus();
+    if (currentUserRole !== 'admin' && currentUserRole !== 'manager') {
+        displayGeneralFeedback('error', 'Permiso denegado.');
+        return;
+    }
+    if (!maintenanceModal || !equipment) {
+        console.error("Modal de mantenimiento o datos del equipo no disponibles.");
+        return;
     }
 
+    resetMaintenanceForm(); // Esto ahora incluye los valores por defecto
+
+    currentEquipmentForMaintenance = equipment;
+    if (maintenanceEquipmentIdInput) maintenanceEquipmentIdInput.value = equipment.id;
+    if (maintenanceModalTitle) maintenanceModalTitle.textContent = `Registrar Mantenimiento para ID: ${equipment.id}`;
+    if (maintenanceEquipmentInfo) maintenanceEquipmentInfo.textContent = `${safe(equipment.tipo_equipo)} - Serial: ${safe(equipment.serial)}`;
+
+    showModal(maintenanceModal);
+    if(maintenanceFechaRealizadoInput) maintenanceFechaRealizadoInput.focus(); // O enfocar otro campo si prefieres
+}
+async function openViewModal(equipment) { // Es una async function
+    console.log("openViewModal called with:", equipment);
+    if (!equipmentModal) { console.error("Modal de equipo no encontrado!"); return; }
+
+    resetForm(); // Limpia y resetea la visibilidad a "todo oculto"
+    isViewingOnly = true; // Establecer estado de solo lectura
+    editingEquipmentId = equipment.id;
+    if (equipmentIdInput) equipmentIdInput.value = equipment.id;
+    if (modalTitle) modalTitle.textContent = `Detalles Equipo ID: ${equipment.id} (${safe(equipment.tipo_equipo)} - ${safe(equipment.serial)})`;
+
+    fillForm(equipment); // Llenar con datos
+    setFormEnabled(false); // Activa los spans y oculta inputs/selects
+
+    if (maintenanceHistorySection) maintenanceHistorySection.classList.remove('hidden');
+    await loadAndRenderMaintenanceHistory(equipment.id); // Es async, así que openViewModal debe ser async
+
+    showModal(equipmentModal);
+}
     function closeMaintenanceModalAction() {
         hideModal(maintenanceModal);
         resetMaintenanceForm();
@@ -1666,100 +1763,165 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log("--- handleFormSubmit FINALIZADO ---");
     }
     
-    function filterMaintenance() {
-        console.log("--- filterMaintenance INVOCADA ---");
-        const hoy = new Date();
-        hoy.setHours(0, 0, 0, 0); 
-    
-        const pendientes = allEquipmentData.filter(eq => {
-            if (!eq.proximo_mantenimiento) return false;
-            try {
-                const parts = eq.proximo_mantenimiento.split('-');
-                if (parts.length === 3) {
-                    const fechaProxMantenimiento = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
-                    const hoyUTC = new Date(Date.UTC(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()));
-                    return fechaProxMantenimiento <= hoyUTC;
-                }
-                return false;
-            } catch (e) { return false; }
-        });
-    
-        console.log(`  Mantenimientos pendientes encontrados: ${pendientes.length}`);
-    
-        // --- PASOS CLAVE ---
-        // 1. Actualizar los datos a mostrar
-        currentFilteredData = pendientes; 
-        // 2. Resetear página
-        currentPage = 1; 
-        // 3. Renderizar la tabla con estos datos
-        renderPagedTable(); 
-        // 4. Actualizar información de filtros
-        updateFilteredInfo(true); // Pasar true para indicar filtro especial
-        // --------------------
-    
-        // Opcional: Mostrar feedback general
-        // displayGeneralFeedback('info', `Mostrando ${pendientes.length} equipos con mantenimiento pendiente.`);
-        
-        console.log("--- filterMaintenance FINALIZADA ---");
-    }
+function filterMaintenance() {
+    console.log("--- filterMaintenance INVOCADA ---");
 
-    function setFormEnabled(enabled) {
-        console.log(`setFormEnabled called: enabled=${enabled} (isViewingOnly=${isViewingOnly})`);
-
-        Object.keys(formInputs).forEach(fieldName => {
-            const inputElement = formInputs[fieldName];
-            const selectElement = formSelects[fieldName];
-            const displaySpan = formDisplaySpans[fieldName];
-
-            if (!inputElement || !displaySpan) { 
-                console.warn(`setFormEnabled: Faltan elementos DOM para campo '${fieldName}'. Saltando.`);
-                return;
-            }
-
-            // Primero, restablecemos la visibilidad y estado para este campo
-            // Aseguramos que el span de display esté OCULTO por si acaso
-            displaySpan.classList.remove('is-active'); // <--- CRÍTICO: Asegurar que el span no esté activo
-
-            // Lógica principal de visibilidad y habilitación
-            if (enabled) { // Modo Editar o Agregar
-                inputElement.disabled = false; // Habilitar input
-                inputElement.classList.remove('hidden'); // Mostrar input principal
-
-                if (selectElement) { // Si el campo tiene un select
-                    selectElement.classList.remove('hidden'); // Mostrar el select
-                    // Mostrar input de texto de "nuevo valor" SOLO si el select está en "__nuevo__"
-                    if (selectElement.value === '__nuevo__') {
-                        inputElement.classList.remove('hidden');
-                    } else { // Si no es "__nuevo__", ocultar el input de texto
-                        inputElement.classList.add('hidden');
-                    }
-                }
-                
-                // Ajustar 'required' para los inputs editables
-                if (fieldName === 'serial' || fieldName === 'tipo_equipo') {
-                    inputElement.required = true;
-                } else {
-                    inputElement.required = false; // Asegurar que otros no sean requeridos
-                }
-
-            } else { // Modo Ver (enabled === false)
-                displaySpan.classList.add('is-active'); // <--- CRÍTICO: Activar el span de display
-                inputElement.classList.add('hidden'); // Ocultar input principal (ya deshabilitado)
-                inputElement.disabled = true; // Deshabilitar input principal
-                if (selectElement) selectElement.classList.add('hidden'); // Ocultar el select
-            }
-        });
-
-        // Asegurar que el botón Guardar se muestre o no según el modo
-        if(saveButton) {
-             if (!enabled && isViewingOnly) { // Modo "Ver"
-                 saveButton.classList.add('hidden');
-             } else { // Modo "Agregar" o "Editar"
-                 saveButton.classList.remove('hidden');
-             }
+    // Obtener el número de días del input
+    let daysAhead = 0; // Valor por defecto si el input está vacío o es inválido
+    if (maintenanceDaysFilterInput && maintenanceDaysFilterInput.value !== "") {
+        const parsedDays = parseInt(maintenanceDaysFilterInput.value, 10);
+        if (!isNaN(parsedDays) && parsedDays >= 0) {
+            daysAhead = parsedDays;
+        } else {
+            // Opcional: Mostrar un error si el valor no es válido
+            console.warn("Valor de días para filtro de mantenimiento no válido. Usando 0.");
+            // Podrías también resetear el input a 0 o mostrar un feedback al usuario
+            if(maintenanceDaysFilterInput) maintenanceDaysFilterInput.value = "0";
         }
-        if(saveButton) saveButton.disabled = !enabled;
     }
+    console.log(`  Filtrando mantenimientos para los próximos ${daysAhead} días (0 = hoy y vencidos).`);
+
+    const hoy = new Date(); // Fecha y hora actual
+    // Para la comparación, solo nos interesa la fecha, no la hora.
+    // Creamos un objeto Date que representa el inicio del día de hoy.
+    const inicioDeHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+
+    // Calcular la fecha límite basada en 'daysAhead'
+    // Clona 'inicioDeHoy' para no modificarlo directamente
+    const fechaLimite = new Date(inicioDeHoy.valueOf());
+    fechaLimite.setDate(inicioDeHoy.getDate() + daysAhead);
+    // Ahora fechaLimite es el inicio del día (daysAhead) en el futuro.
+    // Para incluir todo ese día, podríamos querer el final de ese día,
+    // o simplemente comparar con "menor o igual que el inicio de fechaLimite".
+    // Por simplicidad, compararemos con <= fechaLimite (que es el inicio del día límite).
+
+    const pendientes = allEquipmentData.filter(eq => {
+        if (!eq.proximo_mantenimiento) return false; // Sin fecha de próximo mantenimiento
+        try {
+            // eq.proximo_mantenimiento es "YYYY-MM-DD"
+            const parts = eq.proximo_mantenimiento.split('-');
+            if (parts.length === 3) {
+                const year = parseInt(parts[0], 10);
+                const month = parseInt(parts[1], 10) - 1; // Meses en JS son 0-index
+                const day = parseInt(parts[2], 10);
+
+                // Crear fecha de próximo mantenimiento en UTC para evitar problemas de zona horaria en la creación.
+                // Luego la compararemos con nuestras fechas locales 'inicioDeHoy' y 'fechaLimite'.
+                const fechaProxMantenimiento = new Date(Date.UTC(year, month, day));
+
+                // Para la comparación, es mejor convertir todo a timestamps o asegurarse de que las horas sean 00:00:00
+                // inicioDeHoy y fechaLimite ya están al inicio del día.
+                // fechaProxMantenimiento también se considerará como el inicio de su día para la comparación.
+
+                // El mantenimiento está pendiente si:
+                // 1. Su fecha es ANTERIOR o IGUAL a hoy (vencido o para hoy) -> esto está cubierto si daysAhead es 0
+                // 2. Su fecha está DENTRO del rango de [hoy, hoy + daysAhead días]
+                // Lógica simplificada: está pendiente si es <= fechaLimite
+                // Y si daysAhead es 0, fechaLimite es igual a inicioDeHoy.
+                return fechaProxMantenimiento <= fechaLimite;
+            }
+            return false; // Formato de fecha inválido
+        } catch (e) {
+            console.error("Error parseando fecha de mantenimiento:", eq.proximo_mantenimiento, e);
+            return false;
+        }
+    });
+
+    console.log(`  Mantenimientos pendientes/próximos encontrados: ${pendientes.length}`);
+
+    currentFilteredData = pendientes;
+    currentPage = 1;
+    renderPagedTable();
+    // Actualizar información de filtros
+    // Podríamos ser más específicos en el mensaje del filtro
+    let filterInfoMessage = `(Filtro: Mtto. <= ${fechaLimite.toLocaleDateString()})`;
+    if (daysAhead === 0) {
+        filterInfoMessage = `(Filtro: Mtto. vencido/hoy)`;
+    }
+    updateFilteredInfo(true, filterInfoMessage); // Pasamos un mensaje personalizado
+
+    // displayGeneralFeedback('info', `Mostrando ${pendientes.length} equipos con mantenimiento pendiente o próximo en ${daysAhead} días.`);
+}
+
+function setFormEnabled(enabled) {
+    console.log(`setFormEnabled called: enabled=${enabled}, isViewingOnly=${isViewingOnly}`);
+
+    // Iterar sobre todos los inputs definidos en formInputs
+    Object.keys(formInputs).forEach(fieldName => {
+        const inputElement = formInputs[fieldName];     // ej. input#marca, input#serial, select#estatus
+        const selectElement = formSelects[fieldName];   // ej. select#marca-select (puede ser undefined si no hay select asociado)
+        const displaySpan = formDisplaySpans[fieldName]; // ej. span#marca-display
+
+        if (!inputElement) { // Cada campo en formInputs debe tener un inputElement
+            console.warn(`setFormEnabled: inputElement no encontrado para '${fieldName}'. Saltando.`);
+            return;
+        }
+        if (!displaySpan) { // Cada campo en formInputs debe tener un displaySpan
+            console.warn(`setFormEnabled: displaySpan no encontrado para '${fieldName}'. Saltando.`);
+            // return; // Podríamos continuar si solo falta el span, pero es un problema de HTML
+        }
+
+        // Resetear clases de visibilidad antes de aplicar nuevas
+        inputElement.classList.add('hidden');
+        if (selectElement) selectElement.classList.add('hidden');
+        if (displaySpan) displaySpan.classList.remove('is-active');
+
+
+        if (enabled) { // Modo AGREGAR o EDITAR
+            inputElement.disabled = false;
+            if(selectElement) selectElement.disabled = false;
+
+            if (selectElement) { // Es un campo con select + input de texto (ej. Marca)
+                selectElement.classList.remove('hidden'); // Mostrar el select (ej. #marca-select)
+
+                if (selectElement.value === '__nuevo__') {
+                    inputElement.classList.remove('hidden'); // Mostrar el input de texto (ej. #marca)
+                    // Requerido si es tipo_equipo y nuevo, o si es serial (manejado abajo)
+                    inputElement.required = (fieldName === 'tipo_equipo');
+                } else {
+                    // inputElement (ej. #marca) permanece oculto si se seleccionó una opción existente o "--Seleccione--"
+                    // y su valor ya fue puesto por fillForm (o está vacío si no había valor o se eligió "Seleccione")
+                    inputElement.required = false;
+                }
+            } else { // Es un campo sin select asociado (ej. Serial, Estatus, Observación)
+                inputElement.classList.remove('hidden'); // Mostrar el input/select directo (ej. #serial, #estatus)
+                // inputElement.required se establece abajo para todos los casos
+            }
+            // Aplicar 'required' específicamente
+            if (fieldName === 'serial') inputElement.required = true;
+            // tipo_equipo es requerido solo si su input de texto está visible (o si es el único input para tipo_equipo)
+            if (fieldName === 'tipo_equipo' && !inputElement.classList.contains('hidden')) inputElement.required = true;
+
+
+        } else { // Modo VER (isViewingOnly = true)
+            inputElement.disabled = true;
+            if(selectElement) selectElement.disabled = true;
+            // Los inputs y selects permanecen ocultos (ya se hizo arriba)
+
+            if (displaySpan) {
+                displaySpan.classList.add('is-active'); // Mostrar el span
+            } else {
+                // Si no hay span, al menos mostrar el input deshabilitado con su valor
+                inputElement.classList.remove('hidden');
+                if(selectElement && formInputs[fieldName] !== selectElement ) { // Si hay un select que no es el mismo que el input (caso de campos con "select" y "text input")
+                    selectElement.classList.remove('hidden'); // Mostrar también el select deshabilitado
+                }
+            }
+        }
+    });
+
+    // Manejo del botón Guardar
+    if (saveButton) {
+        if (enabled && !isViewingOnly) { // Solo mostrar si está habilitado Y NO es solo vista
+            saveButton.classList.remove('hidden');
+            saveButton.disabled = false;
+        } else {
+            saveButton.classList.add('hidden');
+            saveButton.disabled = true;
+        }
+    }
+    console.log(`setFormEnabled: Finalizado. Botón Guardar ${saveButton?.classList.contains('hidden') ? 'oculto' : 'visible'}, ${saveButton?.disabled ? 'deshabilitado' : 'habilitado'}`);
+}
     
 
     // Confirmación de Borrado
@@ -2366,73 +2528,105 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    async function populateSelectWithNewOption(selectElement, inputElement, backendFunctionName, includeSelectOption = true) {
-        if (!backend || !selectElement || !inputElement || !backend[backendFunctionName] || typeof backend[backendFunctionName] !== 'function') {
-            console.error(`populateSelectWithNewOption: Invalid args for ${backendFunctionName}`);
-            return;
+async function populateSelectWithNewOption(selectElement, inputElement, backendFunctionName, equipmentValueForThisField = null, includeSelectOption = true) {
+    // ... (verificaciones iniciales y obtención de optionsFromDb como antes) ...
+    // console.log(`Poblando y Ajustando: Select '${selectElement.id}', Input: '${inputElement?.id}', Valor Equipo: '${equipmentValueForThisField}'`);
+
+    try {
+        const rawResponse = await backend[backendFunctionName]();
+        let optionsFromDb = []; // Estas son las opciones con su capitalización original de la BD
+        // ... (lógica para parsear rawResponse en optionsFromDb) ...
+        if (rawResponse && typeof rawResponse === 'string') {
+            try { optionsFromDb = JSON.parse(rawResponse); } catch (e) { console.error("Error parsing JSON para "+selectElement.id, e); optionsFromDb=[];}
+        } else if (Array.isArray(rawResponse)) {
+            optionsFromDb = rawResponse;
         }
-    
-        console.log(`Poblando select '${selectElement.id}' (input: '${inputElement.id}') llamando a backend.${backendFunctionName}...`);
-        try {
-            const rawResponse = await backend[backendFunctionName]();
-            let values = [];
-            if (rawResponse && typeof rawResponse === 'string') {
-                 try { values = JSON.parse(rawResponse); } catch (e) { console.error("Error parsing JSON", e); }
-            } else if (Array.isArray(rawResponse)) { values = rawResponse; }
-            if (!Array.isArray(values)) { values = []; }
-    
-            const currentValue = selectElement.value; // Guardar valor actual
-            selectElement.innerHTML = ''; // Limpiar select
-    
-            // 1. Opción "-- Seleccione --"
-            if (includeSelectOption) {
-                const selectOpt = document.createElement('option');
-                selectOpt.value = "";
-                let placeholderText = inputElement.name.replace(/_/g, ' ');
-                placeholderText = placeholderText.charAt(0).toUpperCase() + placeholderText.slice(1);
-                selectOpt.textContent = `-- Seleccione ${placeholderText} --`;
-                selectElement.appendChild(selectOpt);
-            }
-            
-            // 2. Opción "-- Nuevo ... --"
+        if (!Array.isArray(optionsFromDb)) { // Asegurar que sea un array
+             console.warn(`OptionsFromDb para ${selectElement.id} no es un array después de procesar:`, optionsFromDb);
+             optionsFromDb = [];
+        }
+
+
+        selectElement.innerHTML = ''; // Limpiar select
+
+        // ... (Añadir opción "-- Seleccione --" y "-- Nuevo --" como antes) ...
+        if (includeSelectOption) {
+            const selectOpt = document.createElement('option');
+            selectOpt.value = "";
+            let placeholderText = inputElement ? inputElement.name.replace(/_/g, ' ') : selectElement.id.replace(/-select$/, '').replace(/-/g, ' ');
+            placeholderText = placeholderText.charAt(0).toUpperCase() + placeholderText.slice(1);
+            selectOpt.textContent = `-- Seleccione ${placeholderText} --`;
+            selectElement.appendChild(selectOpt);
+        }
+
+        if (inputElement) {
             const newOpt = document.createElement('option');
-            newOpt.value = "__nuevo__"; 
+            newOpt.value = "__nuevo__";
             let newOptionText = inputElement.name.replace(/_/g, ' ');
             newOptionText = newOptionText.charAt(0).toUpperCase() + newOptionText.slice(1);
-            newOpt.textContent = `-- Nuevo ${newOptionText} --`; 
+            newOpt.textContent = `-- Nuevo ${newOptionText} --`;
             selectElement.appendChild(newOpt);
-    
-            // 3. Opciones de la base de datos (ordenadas)
-            const validValues = [...new Set(values)].filter(v => v !== null && v !== undefined && String(v).trim() !== '').sort((a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: 'base' }));
-            validValues.forEach(value => {
-                const option = document.createElement('option');
-                option.value = String(value).trim();
-                option.textContent = String(value).trim();
-                selectElement.appendChild(option);
-            });
-    
-            // --- CORRECCIÓN AQUÍ: Declarar possibleValues ---
-            const possibleValues = ["", "__nuevo__", ...validValues.map(String)]; // Convertir a String explícitamente
-            // Restaurar valor previo si aún existe en las opciones, o dejar vacío
-            if (possibleValues.includes(currentValue)) { 
-                selectElement.value = currentValue;
-            } else {
-                selectElement.value = "";
-            }
-            
-            // Ocultar input al (re)poblar, solo se muestra si se selecciona '__nuevo__' en modo ENABLED
-            if (inputElement) { // Asegurar que inputElement no es null
-                inputElement.classList.add('hidden');
-                inputElement.value = '';
-                inputElement.required = false; 
-            }
-    
-        } catch (error) {
-            console.error(`Error al poblar select '${selectElement.id}' desde ${backendFunctionName}:`, error);
-            // Asegurar que el select no quede en blanco si falla
-            if (selectElement) selectElement.innerHTML = `<option value="">-- Error al cargar --</option>`;
+        }
+
+
+        // validOptionsFromDb mantiene la capitalización original
+        const validOptionsFromDb = [...new Set(optionsFromDb)]
+            .filter(v => v !== null && v !== undefined && String(v).trim() !== '')
+            .sort((a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: 'base' }));
+
+        validOptionsFromDb.forEach(value => {
+            const option = document.createElement('option');
+            option.value = String(value).trim(); // El valor de la opción es el original
+            option.textContent = String(value).trim(); // El texto visible es el original
+            selectElement.appendChild(option);
+        });
+
+        // --- Lógica de Selección (Comparación insensible a mayúsculas, selección sensible) ---
+        const currentEquipmentValueTrimmed = equipmentValueForThisField ? String(equipmentValueForThisField).trim() : null;
+        const lowerCaseEquipmentValue = currentEquipmentValueTrimmed ? currentEquipmentValueTrimmed.toLowerCase() : null;
+
+        let matchedOptionFromDb = null; // Esta guardará la opción de la BD con su capitalización original
+        if (lowerCaseEquipmentValue) {
+            // Busca en validOptionsFromDb una opción cuyo valor en minúsculas coincida
+            matchedOptionFromDb = validOptionsFromDb.find(opt => String(opt).trim().toLowerCase() === lowerCaseEquipmentValue);
+        }
+
+        // --- Debug Logs (MUY IMPORTANTES) ---
+        console.log(`--- Debug para Select ID: ${selectElement.id} ---`);
+        console.log(`   Equipment Value (original): '${equipmentValueForThisField}'`);
+        console.log(`   Equipment Value (trimmed): '${currentEquipmentValueTrimmed}'`);
+        console.log(`   Equipment Value (lowercase): '${lowerCaseEquipmentValue}'`);
+        console.log(`   Options from DB (validOptionsFromDb, capitalización original) - (max 5):`, JSON.stringify(validOptionsFromDb.slice(0,5)));
+        console.log(`   Opción Coincidente Encontrada (matchedOptionFromDb): '${matchedOptionFromDb}'`);
+        // --- Fin Debug ---
+
+
+        if (matchedOptionFromDb) {
+            // CASO 1: Coincidencia encontrada (usando comparación insensible a mayúsculas)
+            selectElement.value = matchedOptionFromDb; // Establece el select.value al valor ORIGINAL de la DB (ej. "Scanner")
+            if (inputElement) inputElement.value = '';    // Limpiar input de texto asociado
+            console.log(`     CASO 1: Coincidencia. Select value: "${selectElement.value}". Input text value: "${inputElement?.value}"`);
+        } else if (currentEquipmentValueTrimmed && inputElement) {
+            // CASO 2: No hay coincidencia, pero hay un valor en el equipo Y existe un input de texto -> es "nuevo"
+            selectElement.value = "__nuevo__";
+            inputElement.value = currentEquipmentValueTrimmed; // Poner el valor original del equipo en el input de texto
+            console.log(`     CASO 2: Nuevo. Select value: "__nuevo__". Input text value: "${inputElement.value}"`);
+        } else {
+            // CASO 3: No hay valor para el equipo, o es un select sin input de texto asociado (ej. Estatus, o bulk-edit)
+            selectElement.value = ""; // Default a "-- Seleccione --"
+            if (inputElement) inputElement.value = '';
+            console.log(`     CASO 3: Sin valor/default. Select value: "". Input text value: "${inputElement?.value}"`);
+        }
+
+    } catch (error) {
+        // ... (manejo de error como antes) ...
+        console.error(`Error en populateSelectWithNewOption para '${selectElement.id}':`, error);
+        if (selectElement) {
+            selectElement.innerHTML = `<option value="">-- Error al cargar --</option>`;
+            selectElement.value = "";
         }
     }
+}
 
     function handleFileSelect(event) { // Ya no necesita ser async
         // Verificar backend

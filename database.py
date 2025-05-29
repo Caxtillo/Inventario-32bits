@@ -890,7 +890,46 @@ def update_user_role(user_id, new_role):
         return False, f"Error de base de datos: {e}"
     finally:
         if conn: conn.close()
+def get_count_equipos_por_departamento(sede_filtrar=None):
+    """
+    Obtiene el conteo de equipos agrupados por departamento.
+    Si se proporciona sede_filtrar, filtra por esa sede.
+    Maneja campos encriptados y no encriptados.
+    """
+    conn = None
+    counts = {}
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        base_sql = "SELECT COALESCE(NULLIF(TRIM(departamento), ''), 'No Asignado') as item, COUNT(*) as count FROM equipos"
+        params = []
 
+        if sede_filtrar and sede_filtrar.strip() != "":
+            # Asumiendo que 'sede' NO está encriptado. Si lo estuviera, la lógica es más compleja.
+            base_sql += " WHERE LOWER(TRIM(sede)) = LOWER(?)" # Comparación insensible a mayúsculas/minúsculas
+            params.append(sede_filtrar.strip())
+        
+        base_sql += " GROUP BY item ORDER BY count DESC"
+        
+        cursor.execute(base_sql, params)
+        
+        for row in cursor.fetchall():
+            counts[row[0]] = row[1]
+        
+        return [{"name": name, "value": value} for name, value in counts.items()]
+
+    except sqlite3.Error as e:
+        print(f"Error DB en get_count_equipos_por_departamento (sede: {sede_filtrar}): {e}")
+        return []
+    except Exception as e:
+        print(f"Error general en get_count_equipos_por_departamento: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
+    finally:
+        if conn:
+            conn.close()
 
 def reset_user_password(user_id, new_password):
     """Establece una nueva contraseña para un usuario (hasheada)."""
@@ -1334,55 +1373,94 @@ if __name__ == '__main__':
         import traceback
         traceback.print_exc()
 
-def get_count_by_field(field_name, is_encrypted=False):
-    """
-    Obtiene el conteo de equipos agrupados por un campo específico.
-    Maneja campos encriptados y no encriptados.
-    """
+def get_count_by_field(field_name, is_encrypted=False, sede_filtrar=None):
     conn = None
     counts = {}
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        base_query_select_count = f"SELECT COALESCE(NULLIF(TRIM({field_name}), ''), 'No Asignado') as item, COUNT(*) as count FROM equipos"
+        group_by_clause = "GROUP BY item ORDER BY count DESC"
+        
+        where_conditions = []
+        params = []
+
+        # Condición para el campo principal (si es encriptado, se filtra después)
+        if not is_encrypted:
+            # Para campos no encriptados, nos aseguramos de que el campo en sí no sea nulo o vacío
+            # antes de COALESCE, aunque COALESCE ya lo maneja.
+            # Esto es más para asegurar que contamos solo registros con datos válidos en field_name
+            # where_conditions.append(f"{field_name} IS NOT NULL AND TRIM({field_name}) != ''") # Opcional si COALESCE es suficiente
+            pass
+
+
+        # Añadir filtro de sede SIEMPRE que sede_filtrar esté presente
+        if sede_filtrar and sede_filtrar.strip() != "":
+            # Asumiendo que 'sede' NO está encriptado.
+            where_conditions.append("LOWER(TRIM(sede)) = LOWER(?)")
+            params.append(sede_filtrar.strip())
+
+        # Construir la consulta final
+        final_sql = base_query_select_count
+        if where_conditions:
+            final_sql += " WHERE " + " AND ".join(where_conditions)
+        final_sql += " " + group_by_clause
+        
+        # Debug: Imprimir la consulta y parámetros
+        print(f"  DB (get_count_by_field for '{field_name}', sede: '{sede_filtrar}'):")
+        print(f"    SQL: {final_sql}")
+        print(f"    PARAMS: {params}")
+
         if is_encrypted:
-            # Para campos encriptados, debemos obtener todos, desencriptar y luego contar en Python
-            sql = f"SELECT {field_name} FROM equipos WHERE {field_name} IS NOT NULL"
-            cursor.execute(sql)
+            # Para campos encriptados, la lógica de filtrado por sede DEBE OCURRIR ANTES de la desencriptación masiva.
+            # La consulta base para obtener los blobs debe incluir el WHERE de sede.
+            
+            # Paso 1: Obtener los blobs del campo encriptado, YA FILTRADOS POR SEDE (si aplica)
+            select_blobs_sql = f"SELECT {field_name} FROM equipos"
+            if where_conditions: # Si hay filtro de sede (u otros futuros)
+                 # Nota: Si field_name fuera 'sede' y is_encrypted, esto sería un problema.
+                 # Pero para tipo_equipo/estatus (no encriptados) con filtro de sede, esto está bien.
+                 # El problema es si field_name ES encriptado Y queremos filtrar por sede.
+                 # La lógica aquí se complica si field_name es encriptado.
+                 # Por ahora, tus campos tipo_equipo y estatus NO son encriptados.
+                 # Si tipo_equipo o estatus FUERAN encriptados, necesitarías:
+                 # 1. Leer TODOS los registros que cumplen el WHERE de sede.
+                 # 2. Desencriptar el field_name de esos registros.
+                 # 3. Agrupar y contar en Python.
+                 # La implementación actual para is_encrypted no maneja bien el filtrado por OTRO campo (sede).
+                 
+                 # ***** CORRECCIÓN IMPORTANTE PARA is_encrypted CON FILTRO DE SEDE *****
+                 # Si el campo a contar (field_name) es encriptado, Y se quiere filtrar por sede (no encriptada):
+                select_blobs_sql += " WHERE " + " AND ".join(where_conditions) # Aplicar filtro de sede
+            else: # Sin filtro de sede
+                select_blobs_sql += f" WHERE {field_name} IS NOT NULL" # Solo tomar no nulos del campo encriptado
+
+            print(f"    ENCRYPTED SQL for blobs: {select_blobs_sql}")
+            print(f"    ENCRYPTED PARAMS for blobs: {params}")
+            cursor.execute(select_blobs_sql, params) # Usar los mismos params (solo de sede)
+            
             all_values_blob = [row[0] for row in cursor.fetchall()]
             
             temp_counts = {}
             for blob_value in all_values_blob:
                 decrypted_val = decrypt_data(blob_value)
-                if decrypted_val and not decrypted_val.startswith("##Error"):
-                    # Normalizar "SIN SERIAL" y similares
-                    if field_name == 'serial' and (decrypted_val == "SIN SERIAL" or decrypted_val.startswith("SIN_SERIAL_")):
-                         val_to_count = "SIN SERIAL (Gen.)" # Agrupar todos los "sin serial"
-                    else:
-                        val_to_count = decrypted_val.strip() if decrypted_val else "Desconocido"
-                    
-                    temp_counts[val_to_count] = temp_counts.get(val_to_count, 0) + 1
+                # Usar 'No Asignado' si la desencriptación falla o es None/vacío
+                val_to_count = "No Asignado" 
+                if decrypted_val and not decrypted_val.startswith("##Error") and decrypted_val.strip():
+                    val_to_count = decrypted_val.strip()
+                temp_counts[val_to_count] = temp_counts.get(val_to_count, 0) + 1
             counts = temp_counts
 
-        else: # Campos no encriptados, consulta directa
-            # Usar COALESCE para agrupar NULLs y vacíos como 'Desconocido'
-            sql = f"""
-                SELECT 
-                    COALESCE(NULLIF(TRIM({field_name}), ''), 'Desconocido') as item, 
-                    COUNT(*) as count
-                FROM equipos
-                GROUP BY item
-                ORDER BY count DESC
-            """
-            cursor.execute(sql)
+        else: # Campos NO encriptados (tipo_equipo, estatus, departamento)
+            cursor.execute(final_sql, params)
             for row in cursor.fetchall():
-                counts[row[0]] = row[1]
+                counts[row[0]] = row[1] # row[0] es 'item', row[1] es 'count'
         
-        # Convertir a formato {name: '...', value: ...} para ECharts
-        return [{"name": name, "value": value} for name, value in counts.items()]
+        return [{"name": str(name), "value": value} for name, value in counts.items()]
 
     except sqlite3.Error as e:
-        print(f"Error DB en get_count_by_field para '{field_name}': {e}")
+        print(f"Error DB en get_count_by_field para '{field_name}' (sede: {sede_filtrar}): {e}")
         return []
     except Exception as e:
         print(f"Error general en get_count_by_field para '{field_name}': {e}")
@@ -1392,7 +1470,28 @@ def get_count_by_field(field_name, is_encrypted=False):
     finally:
         if conn:
             conn.close()
-
+def count_equipment_for_sede(sede_filtrar=None):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        sql = "SELECT COUNT(*) FROM equipos"
+        params = []
+        if sede_filtrar and sede_filtrar.strip() != "":
+            # Asumiendo que 'sede' NO está encriptado
+            sql += " WHERE LOWER(TRIM(sede)) = LOWER(?)"
+            params.append(sede_filtrar.strip())
+        
+        cursor.execute(sql, params)
+        count = cursor.fetchone()[0]
+        return count if count is not None else 0
+    except sqlite3.Error as e:
+        print(f"Error DB en count_equipment_for_sede (sede: {sede_filtrar}): {e}")
+        return 0
+    finally:
+        if conn:
+            conn.close()
+            
 def get_proximos_mantenimientos_count(days_ahead=30):
     """Cuenta equipos con próximo mantenimiento en los siguientes 'days_ahead' días."""
     conn = None

@@ -121,26 +121,38 @@ class BackendHandler(QObject):
 
     # --- Slots para CRUD de Equipos (Lógica sin cambios, dependen de database.py) ---
 
-    @Slot(result=str)
-    def get_dashboard_data(self):
-        print("BackendHandler: Solicitud get_dashboard_data.")
+    @Slot(str, result=str)
+    def get_dashboard_data(self, sede_seleccionada=""):
+        print(f"BackendHandler: Solicitud get_dashboard_data. Sede seleccionada: '{sede_seleccionada}'")
         try:
-            # Solo usuarios con ciertos roles pueden ver el dashboard (opcional)
-            if not self._check_permission(['admin', 'manager', 'read_only']): # Ajusta roles según necesites
-                return json.dumps({'error': 'Permiso denegado para ver el dashboard.'})
+            if not self._check_permission(['admin', 'manager', 'read_only']):
+                return json.dumps({'error': 'Permiso denegado.'})
+
+            sede_para_filtrar = sede_seleccionada if sede_seleccionada and sede_seleccionada.strip() != "" else None
+            print(f"  Backend: Sede para filtrar en DB: {sede_para_filtrar}")
 
             data = {
-                'total_equipos': database.get_total_equipment_count(),
-                'total_usuarios': database.get_total_users_count(),
-                'equipos_por_tipo': database.get_count_by_field('tipo_equipo'),
-                'equipos_por_estatus': database.get_count_by_field('estatus'),
-                'equipos_por_departamento': database.get_count_by_field('departamento'),
-                'equipos_por_marca': database.get_count_by_field('marca'), # Top N podría ser mejor aquí
-                'equipos_por_sede': database.get_count_by_field('sede'),
-                'mantenimientos_proximos_30d': database.get_proximos_mantenimientos_count(30),
-                # Podrías añadir más datos aquí, como top N marcas, etc.
+                'total_equipos': database.get_total_equipment_count(), # Este es un total general
+                'total_usuarios': database.get_total_users_count(),   # Total general
+                
+                # Campos filtrados por sede:
+                'equipos_por_tipo': database.get_count_by_field('tipo_equipo', is_encrypted=False, sede_filtrar=sede_para_filtrar),
+                'equipos_por_estatus': database.get_count_by_field('estatus', is_encrypted=False, sede_filtrar=sede_para_filtrar),
+                'equipos_en_sede_seleccionada': database.count_equipment_for_sede(sede_para_filtrar),
+                'equipos_por_departamento': database.get_count_by_field('departamento', is_encrypted=False, sede_filtrar=sede_para_filtrar),
+                
+                # Este gráfico no se filtra por sede, ya que ES el gráfico de sedes
+                'equipos_por_sede': database.get_count_by_field('sede', is_encrypted=False, sede_filtrar=None),
+                
+                'mantenimientos_proximos_30d': database.get_proximos_mantenimientos_count(30), # Podría filtrarse por sede también si se desea
+                
+                'lista_sedes': database.get_distinct_sedes()
             }
-            # print(f"  Datos del dashboard preparados: {data}") # Debug
+            # Debug: Imprimir la cantidad de items para cada categoría después del filtro
+            print(f"    Equipos por Tipo (filtrado): {len(data['equipos_por_tipo'])} items")
+            print(f"    Equipos por Estatus (filtrado): {len(data['equipos_por_estatus'])} items")
+            print(f"    Equipos por Departamento (filtrado): {len(data['equipos_por_departamento'])} items")
+
             return json.dumps(data)
         except Exception as e:
             print(f"BackendHandler: Error en get_dashboard_data: {e}")
@@ -325,47 +337,45 @@ class BackendHandler(QObject):
     @Slot(int, result=str)
     def get_qr_code_base64(self, equipment_id):
         print(f"BackendHandler: Solicitud get_qr_code_base64 ID={equipment_id}")
-        if not QRCODE_AVAILABLE:
+        if not QRCODE_AVAILABLE: # Asumiendo que QRCODE_AVAILABLE es un flag global
             print("Error: Librería QR no disponible.")
-            return ""
+            return "" # O un Data URI de una imagen de error
 
         try:
-            equipment_details = database.get_equipment_by_id(equipment_id)
+            equipment_details = database.get_equipment_by_id(equipment_id) # Esta función ya desencripta
             if not equipment_details:
                 print(f"Error: No se encontró equipo con ID {equipment_id} para generar QR.")
                 return ""
 
-            # Usar html.escape para sanear los datos antes de meterlos en el QR
-            def safe_str(value, default=''):
-                 return html.escape(str(value)) if value is not None else default
+            def safe_str(value, default='N/A'): # Helper para formatear
+                return html.escape(str(value)) if value is not None and str(value).strip() != "" else default
 
-            # Construir cadena QR (igual que antes, pero usando safe_str)
-            qr_content = (
-                f"Tipo: {safe_str(equipment_details.get('tipo_equipo'))}\n"
-                f"Marca: {safe_str(equipment_details.get('marca'))}\n"
-                f"Modelo: {safe_str(equipment_details.get('modelo'))}\n"
-                f"Serial: {safe_str(equipment_details.get('serial'))}\n"
-                f"Sede: {safe_str(equipment_details.get('sede'))}\n" 
-                f"Asignado: {safe_str(equipment_details.get('asignado_a'))}\n"
-                f"Dpto: {safe_str(equipment_details.get('departamento'))}\n"
-                f"ID: {equipment_id}"
-            )
-            # print(f"  Contenido QR: {qr_content}") # Debug
+            # Construir cadena QR con todos los campos relevantes
+            # (EXCEPTO historial de mantenimientos)
+            qr_content_lines = [
+                f"ID Equipo: {equipment_id}",
+                f"Tipo: {safe_str(equipment_details.get('tipo_equipo'))}",
+                f"Marca: {safe_str(equipment_details.get('marca'))}",
+                f"Modelo: {safe_str(equipment_details.get('modelo'))}",
+                f"Serial: {safe_str(equipment_details.get('serial'))}",
+                f"Asignado a: {safe_str(equipment_details.get('asignado_a'))}",
+                f"Departamento: {safe_str(equipment_details.get('departamento'))}",
+                f"Sede: {safe_str(equipment_details.get('sede'))}",
+                f"Estatus: {safe_str(equipment_details.get('estatus'))}",
+                f"Observación: {safe_str(equipment_details.get('observacion'))}",
+                f"Registro: {safe_str(equipment_details.get('fecha_registro'))}" # Formatear fecha si es necesario
+            ]
+            # Filtrar líneas con valor 'N/A' si no se quieren mostrar campos vacíos en el QR
+            # qr_content = "\n".join(line for line in qr_content_lines if not line.endswith(": N/A"))
+            qr_content = "\n".join(qr_content_lines)
 
-            # Generar QR
-            qr = qrcode.QRCode(
-                version=None,
-                error_correction=qrcode.constants.ERROR_CORRECT_L,
-                box_size=6, # Ajustable
-                border=2   # Ajustable
-            )
-            qr.add_data(qr_content)
-            qr.make(fit=True)
-            img = qr.make_image(fill_color="black", back_color="white")
 
-            # Convertir a Base64 Data URI
+            print(f"  Contenido QR para ID {equipment_id}: {qr_content}")
+
+            qr_img = qrcode.make(qr_content) # make() es más simple para solo contenido de datos
+            
             buffered = io.BytesIO()
-            img.save(buffered, format="PNG")
+            qr_img.save(buffered, format="PNG")
             img_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
             data_uri = f"data:image/png;base64,{img_str}"
             return data_uri
@@ -373,9 +383,7 @@ class BackendHandler(QObject):
         except Exception as e:
             print(f"Error generando QR para ID {equipment_id}: {e}")
             traceback.print_exc()
-            return "" # Devolver vacío en caso de error
-
-    # --- Slots para Gestión de Usuarios (Lógica sin cambios) ---
+            return ""
 
     @Slot(result=list)
     def get_users(self):
@@ -752,49 +760,74 @@ class BackendHandler(QObject):
             traceback.print_exc()
 
     # --- Slot para Exportar PDF Directamente (usando ReportGenerator) ---
-    @Slot(list, str, result=str) # Ahora devuelve un string JSON
-    def export_view_to_pdf(self, filtered_data, export_format):
-        print(f"BackendHandler: Solicitud export_view_to_pdf ({len(filtered_data)} items, formato: {export_format}).")
-        response_dict = {'success': False, 'message': 'Error desconocido en exportación.'} # Default
+    @Slot(list, str, result=str) # Recibe: lista de diccionarios de equipos, string de formato
+    def export_view_to_pdf(self, equipment_data_list, export_format):
+        print(f"BackendHandler: Solicitud export_view_to_pdf. Equipos: {len(equipment_data_list)}, Formato: '{export_format}'")
+        response_dict = {'success': False, 'message': 'Error desconocido durante la exportación.'}
+
+        # Validaciones básicas
+        if not REPORTLAB_AVAILABLE:
+            response_dict['message'] = 'Error: Componente PDF (ReportLab) no está instalado.'
+            return json.dumps(response_dict)
+        
+        # ReportGenerator podría no estar disponible si su importación falló
+        if ReportGenerator is None:
+             response_dict['message'] = 'Error: Generador de reportes no inicializado.'
+             return json.dumps(response_dict)
+
+        if not self._check_permission(['admin', 'manager', 'read_only']): # Asumiendo que todos pueden exportar
+            response_dict['message'] = 'Permiso denegado para exportar.'
+            return json.dumps(response_dict)
+
+        if not isinstance(equipment_data_list, list):
+            response_dict['message'] = 'Error: Datos de entrada inválidos (no es una lista).'
+            return json.dumps(response_dict)
+
+        if not equipment_data_list:
+            response_dict['message'] = 'No hay datos para exportar.'
+            # Devolver success: True pero con filepath: None podría ser una opción
+            # para que el JS no muestre un error, sino un mensaje informativo.
+            # Por ahora, lo dejamos como fallo para que JS muestre el mensaje.
+            return json.dumps(response_dict)
+
+        if export_format not in ['table', 'qr']:
+            response_dict['message'] = f"Formato de exportación no soportado: '{export_format}'."
+            return json.dumps(response_dict)
+
+        if export_format == 'qr' and not QRCODE_AVAILABLE:
+            response_dict['message'] = 'Error: Componente QR (qrcode) no está instalado para exportar códigos QR.'
+            return json.dumps(response_dict)
 
         try:
-            if not REPORTLAB_AVAILABLE:
-                 response_dict = {'success': False, 'message': 'Componente PDF no disponible (ReportLab).'}
-            elif ReportGenerator is None:
-                  response_dict = {'success': False, 'message': 'Componente PDF no disponible (ReportGenerator).'}
-            elif not self._check_permission(['admin', 'manager', 'read_only']):
-                response_dict = {'success': False, 'message': 'Permiso denegado para exportar.'}
-            elif not filtered_data:
-                response_dict = {'success': False, 'message': 'No hay datos filtrados para exportar.'}
-            elif export_format not in ['table', 'qr']:
-                response_dict = {'success': False, 'message': f"Formato de exportación no soportado: '{export_format}'"}
+            generator = ReportGenerator() # Crear instancia del generador
+            
+            print(f"  BackendHandler: Delegando a ReportGenerator.generate_{export_format}_report...")
+            
+            if export_format == 'table':
+                # generate_table_report espera la lista de diccionarios de equipos
+                result_from_generator = generator.generate_table_report(equipment_data_list)
+            elif export_format == 'qr':
+                # generate_qr_report también espera la lista de diccionarios de equipos
+                result_from_generator = generator.generate_qr_report(equipment_data_list)
+            else: # No debería llegar aquí por la validación anterior
+                result_from_generator = {'success': False, 'message': 'Formato de exportación interno no reconocido.'}
+
+            # El generador debería devolver un dict con {'success': bool, 'message': str, 'filepath': str (opcional)}
+            if isinstance(result_from_generator, dict):
+                response_dict = result_from_generator
             else:
-                # Lógica Principal
-                generator = ReportGenerator()
-                print(f"  Delegando a ReportGenerator para formato '{export_format}'...")
-                if export_format == 'table':
-                    result_from_generator = generator.generate_table_report(filtered_data)
-                elif export_format == 'qr':
-                    result_from_generator = generator.generate_qr_report(filtered_data)
-                else:
-                    result_from_generator = {'success': False, 'message': 'Error interno de formato.'}
-
-                if isinstance(result_from_generator, dict):
-                    response_dict = result_from_generator
-                else:
-                    print(f"  ADVERTENCIA: ReportGenerator no devolvió un dict. Usando error genérico.")
-                    response_dict = {'success': False, 'message': 'Error interno al generar el reporte.'}
-                print(f"  Resultado de ReportGenerator (dict): {response_dict}")
-
-        except Exception as e:
-            print(f"!!! Error EXCEPCIÓN en export_view_to_pdf: {e}")
+                print(f"  ADVERTENCIA: ReportGenerator no devolvió un diccionario. Respuesta: {result_from_generator}")
+                response_dict = {'success': False, 'message': 'Error interno del servidor al procesar el reporte.'}
+        
+        except Exception as e_export:
+            print(f"!!! EXCEPCIÓN GRAVE en export_view_to_pdf: {e_export}")
             traceback.print_exc()
-            response_dict = {'success': False, 'message': f"Error interno del servidor al exportar: {e}"}
-        finally:
-            json_string_response = json.dumps(response_dict) 
-            # -----------------------
-            print(f"BackendHandler (export_view_to_pdf): Devolviendo JSON string: {json_string_response}") # Log útil
-            return json_string_response # Devolver el STRING JSON correcto
+            response_dict = {'success': False, 'message': f"Error crítico del servidor durante la exportación: {e_export}"}
+        
+        json_string_response = json.dumps(response_dict)
+        print(f"BackendHandler (export_view_to_pdf): Devolviendo JSON: {json_string_response}")
+        return json_string_response
+        
     @Slot(str, result=str) # Recibe JSON string de lista de IDs
     def bulk_delete_equipment(self, ids_json_string):
         print(f"BackendHandler: Solicitud bulk_delete_equipment con IDs: {ids_json_string}")

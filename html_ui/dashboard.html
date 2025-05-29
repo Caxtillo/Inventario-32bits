@@ -4,115 +4,110 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Inventario</title>
-    <link rel="stylesheet" href="css/output.css?t=1234567"> <!-- Cache busting -->
+    <link rel="stylesheet" href="css/output.css?t=1234567">
     <link href="fa/css/all.min.css" rel="stylesheet">
     <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
     <script src="js/echarts.min.js"></script>
     <style>
-        /* Estilos Base Mínimos */
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #f1f1f1; }
         ::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #555; }
         .requires-admin, .requires-manager { display: none; }
-
-        .chart-container {
-            min-height: 350px; /* Altura mínima para gráficos */
-            height: 400px;    /* Altura deseada */
-            width: 100%;
-        }
+        .chart-container { min-height: 350px; height: 400px; width: 100%; }
     </style>
 </head>
-<body class="bg-gray-100 text-gray-900">
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
 
-    <nav class="bg-white shadow-md p-4 sm:p-6 sticky top-0 z-40">
+    <nav class="bg-white dark:bg-gray-800 shadow-md p-4 sm:p-6 sticky top-0 z-40">
         <div class="container mx-auto flex flex-wrap justify-between items-center">
             <div class="flex items-center mb-2 sm:mb-0">
                 <img src="assets/logo.png" alt="Logo Empresa" class="h-10 mr-3">
-                <h1 class="text-lg sm:text-xl font-bold text-blue-900">DASHBOARD - INVENTARIO</h1>
+                <h1 class="text-lg sm:text-xl font-bold text-blue-700 dark:text-blue-400">DASHBOARD - INVENTARIO</h1>
             </div>
             <div class="flex items-center space-x-2 sm:space-x-3">
-                <div class="text-xs sm:text-sm text-gray-600 hidden md:block">
+                <div class="text-xs sm:text-sm text-gray-600 dark:text-gray-300 hidden md:block">
                     Usuario: <span id="user-role-display" class="font-medium">Cargando...</span>
                 </div>
                 <button id="inventory-mgmt-button" title="Ir a Inventario"
-                        class="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition duration-150 text-xs sm:text-sm">
+                        class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-md text-xs sm:text-sm shadow hover:shadow-md transition-colors">
                     <i class="fas fa-boxes mr-1"></i> <span class="hidden sm:inline">Inventario</span>
                 </button>
                 <button id="user-mgmt-button" title="Gestionar Usuarios"
-                        class="bg-purple-600 text-white px-3 py-1.5 rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-1 transition duration-150 text-xs sm:text-sm requires-admin">
+                        class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-md text-xs sm:text-sm shadow hover:shadow-md transition-colors requires-admin">
                     <i class="fas fa-users-cog mr-1"></i> <span class="hidden sm:inline">Usuarios</span>
                 </button>
                 <button id="logout-button" title="Cerrar Sesión"
-                        class="bg-red-600 text-white px-3 py-1.5 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 transition duration-150 text-xs sm:text-sm">
+                        class="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-md text-xs sm:text-sm shadow hover:shadow-md transition-colors">
                     <i class="fas fa-sign-out-alt mr-1"></i> <span class="hidden sm:inline">Salir</span>
                 </button>
             </div>
         </div>
     </nav>
 
-    <div class="container mx-auto mt-6 px-4 pb-8">
-        <!-- Fila de KPIs con clases de Tailwind directamente aplicadas -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    <div class="container mx-auto mt-6 px-4 pb-8 space-y-8"> <!-- Espacio entre secciones principales -->
+
+        <!-- Fila de KPIs -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             <!-- KPI 1: Total Equipos -->
-            <div class="bg-white p-6 rounded-xl shadow-lg flex flex-col items-center justify-center text-center">
-                <span id="kpi-total-equipos" class="text-4xl font-bold text-indigo-600 mb-1">0</span>
-                <span class="text-sm font-medium text-gray-500 uppercase tracking-wider">Total Equipos</span>
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-lg flex flex-col items-center justify-center text-center hover:shadow-xl transition-shadow">
+                <span id="kpi-total-equipos" class="text-4xl font-bold text-indigo-600 dark:text-indigo-400 mb-1">0</span>
+                <span class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total Equipos</span>
             </div>
             <!-- KPI 2: Mantenimientos Próximos -->
-            <div class="bg-white p-6 rounded-xl shadow-lg flex flex-col items-center justify-center text-center">
-                <span id="kpi-mantenimientos-prox" class="text-4xl font-bold text-amber-600 mb-1">0</span> <!-- Color diferente -->
-                <span class="text-sm font-medium text-gray-500 uppercase tracking-wider">Mantenim. Próximos (30d)</span>
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-lg flex flex-col items-center justify-center text-center hover:shadow-xl transition-shadow">
+                <span id="kpi-mantenimientos-prox" class="text-4xl font-bold text-amber-500 dark:text-amber-400 mb-1">0</span>
+                <span class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Mantenim. Próximos (30d)</span>
             </div>
             <!-- KPI 3: Total Usuarios -->
-            <div class="bg-white p-6 rounded-xl shadow-lg flex flex-col items-center justify-center text-center">
-                <span id="kpi-total-usuarios" class="text-4xl font-bold text-emerald-600 mb-1">0</span> <!-- Color diferente -->
-                <span class="text-sm font-medium text-gray-500 uppercase tracking-wider">Total Usuarios</span>
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-lg flex flex-col items-center justify-center text-center hover:shadow-xl transition-shadow">
+                <span id="kpi-total-usuarios" class="text-4xl font-bold text-emerald-600 dark:text-emerald-400 mb-1">0</span>
+                <span class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total Usuarios</span>
             </div>
-            <!-- KPI 4: Otro Indicador (Placeholder) -->
-             <div class="bg-white p-6 rounded-xl shadow-lg flex flex-col items-center justify-center text-center">
-                <span id="kpi-placeholder" class="text-4xl font-bold text-sky-600 mb-1">-</span> <!-- Color diferente -->
-                <span class="text-sm font-medium text-gray-500 uppercase tracking-wider">Otro Indicador</span>
+            <!-- KPI 4: Otro Indicador (Placeholder o quitar) -->
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-lg flex flex-col items-center justify-center text-center hover:shadow-xl transition-shadow">
+                <span id="kpi-equipos-sede-actual" class="text-4xl font-bold text-sky-500 dark:text-sky-400 mb-1">0</span>
+                <span id="kpi-equipos-sede-actual-label" class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Equipos en Sede</span>
             </div>
         </div>
 
-        <!-- Contenedor Principal para los Gráficos - Objetivo: 3 columnas en pantallas grandes -->
-        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 gap-6">
+        <!-- Sección del Selector de Sedes -->
+        <div class="bg-white dark:bg-gray-800 p-4 sm:p-5 rounded-xl shadow-lg">
+            <label for="sede-selector-dashboard" class="block text-base font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                <i class="fas fa-map-marked-alt mr-2 text-indigo-500 dark:text-indigo-400"></i>Filtrar Gráfico de Departamentos por Sede:
+            </label>
+            <select id="sede-selector-dashboard"
+                    class="block w-full sm:w-2/3 md:w-1/2 lg:w-1/3 mt-1 px-4 py-2.5 rounded-lg border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:border-indigo-500 dark:focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 sm:text-sm shadow-sm transition-colors">
+                <option value="">-- Mostrar Todos los Departamentos (Todas las Sedes) --</option>
+                <!-- Opciones se poblarán por JS -->
+            </select>
+        </div>
+
+        <!-- Contenedor Principal para los Gráficos -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <!-- Gráfico 1: Equipos por Tipo -->
-            <div class="bg-white p-4 rounded-xl shadow-lg">
+            <div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-lg">
                 <div id="chart-tipos-equipo" class="chart-container"></div>
             </div>
 
             <!-- Gráfico 2: Equipos por Estatus -->
-            <div class="bg-white p-4 rounded-xl shadow-lg">
+            <div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-lg">
                 <div id="chart-estatus-equipo" class="chart-container"></div>
             </div>
 
-            <!-- Gráfico 3: Equipos por Departamento -->
-            <div class="bg-white p-4 rounded-xl shadow-lg">
+            <!-- Gráfico 3: Equipos por Departamento (condicionado) -->
+            <div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-lg">
                 <div id="chart-departamentos" class="chart-container"></div>
             </div>
 
-            <!-- Gráfico 4: Top 10 Marcas -->
-            <!-- Este gráfico podría ir debajo o, si quieres forzar 3 columnas,
-                 necesitarías decidir si alguno se queda solo o si agrupas diferente.
-                 Por ahora, lo dejamos aquí. En una pantalla 'xl', el cuarto
-                 elemento de un grid de 3 columnas comenzará una nueva fila. -->
-            <div class="bg-white p-4 rounded-xl shadow-lg md:col-span-2 xl:col-span-1"> <!-- Intenta hacerlo más pequeño en XL o que ocupe el espacio -->
-                <div id="chart-marcas" class="chart-container"></div>
+            <!-- Gráfico 4: Equipos por Sede -->
+            <div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-lg"> <!-- Ajustado para que no haga col-span extraño -->
+                <div id="chart-sedes" class="chart-container"></div>
             </div>
-
-            <!-- Puedes añadir más contenedores de gráficos aquí si es necesario -->
-            <!-- Ejemplo de un quinto gráfico que ocuparía el segundo lugar en la segunda fila en 'xl' -->
-            <!--
-            <div class="bg-white p-4 rounded-xl shadow-lg">
-                <h3 class="text-lg font-semibold text-gray-700 mb-3 text-center">Otro Gráfico</h3>
-                <div id="chart-otro" class="chart-container"></div>
-            </div>
-            -->
         </div>
-    </div>
 
-    <script src="js/logica_dashboard.js?t=1234567" defer></script> <!-- Cache busting -->
+    </div> <!-- Fin de container mx-auto -->
+
+    <script src="js/logica_dashboard.js?t=1234567" defer></script>
 </body>
 </html>

@@ -160,7 +160,7 @@ inventario_local.db-wal
 # Node.js
 node_modules/
 npm-debug.log*
-yarn-debug.log*
+yarn-debug.log**
 yarn-error.log*
 package-lock.json # Considera si quieres versionarlo. Para consistencia en builds, a menudo SÍ se versiona.
 # yarn.lock      # Similar para Yarn
