@@ -84,7 +84,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const cancelBulkEditButton = document.getElementById('cancel-bulk-edit-button');
     const saveBulkEditButton = document.getElementById('save-bulk-edit-button');
 
-
+    const generateDocumentButton = document.getElementById('generate-document-button'); // O 'generate-document-button-main'
+    const movementDocumentModal = document.getElementById('movement-document-modal');
+    const closeMovementDocumentModalButton = document.getElementById('close-movement-document-modal-button');
+    const cancelMovementDocumentButton = document.getElementById('cancel-movement-document-button');
+    const movementDocumentForm = document.getElementById('movement-document-form');
+    const documentTypeSelect = document.getElementById('document-type-select');
+    const docFechaInput = document.getElementById('doc-fecha');
+    const docAsuntoInput = document.getElementById('doc-asunto');
+    const docNumeroEditableInput = document.getElementById('doc-numero-editable');
+    const docParaNombreInput = document.getElementById('doc-para-nombre');
+    const docParaDepartamentoInput = document.getElementById('doc-para-departamento');
+    const docSelectedCountSpan = document.getElementById('doc-selected-count');
+    const docSelectedEquipmentListDiv = document.getElementById('doc-selected-equipment-list');
+    const movementDocumentFormFeedback = document.getElementById('movement-document-form-feedback');
+    const generatePdfButton = document.getElementById('generate-pdf-button'); // Para el texto y spinner
+    const docDeParteInput = document.getElementById('doc-de-parte');
+    
     let currentEquipmentForMaintenance = null;
 
      // Inputs del formulario (para llenar/resetear)
@@ -599,47 +615,25 @@ function renderPagedTable() {
     updateBulkActionsPanel();
 }
 function updateBulkActionsPanel() {
-    // Primero, verificar si el panel debe mostrarse en absoluto
-    // No mostrar si el rol es 'read_only' O si no hay elementos seleccionados
     if (currentUserRole === 'read_only' || selectedEquipmentIds.size === 0) {
-        if (bulkActionsPanel) {
-            bulkActionsPanel.classList.add('hidden');
-        }
-        // Si el panel se oculta, no necesitamos hacer nada más con los botones internos.
-        return; 
+        if (bulkActionsPanel) bulkActionsPanel.classList.add('hidden');
+        if (generateDocumentButton) generateDocumentButton.disabled = true; // Si el botón está en el panel
+        // Si tienes un generateDocumentButton-main fuera del panel, también lo deshabilitas aquí
+        // const mainDocBtn = document.getElementById('generate-document-button-main');
+        // if (mainDocBtn) mainDocBtn.disabled = selectedEquipmentIds.size === 0 || currentUserRole === 'read_only';
+        return;
     }
 
-    // Si llegamos aquí, el rol NO es 'read_only' Y hay elementos seleccionados
-    if (bulkActionsPanel) { // Asegurarse de que el panel exista
-        if (selectedCountSpan) {
-            selectedCountSpan.textContent = `${selectedEquipmentIds.size} equipo(s) seleccionado(s)`;
-        }
-        bulkActionsPanel.classList.remove('hidden'); // Mostrar el panel
-
-        // Habilitar/deshabilitar botones DENTRO del panel según permisos específicos
-        // (esta parte ya la tenías y es correcta)
+    if (bulkActionsPanel) {
+        if(selectedCountSpan) selectedCountSpan.textContent = `${selectedEquipmentIds.size} equipo(s) seleccionado(s)`;
+        bulkActionsPanel.classList.remove('hidden');
         const canManage = currentUserRole === 'admin' || currentUserRole === 'manager';
-
-        if (bulkEditButton) {
-            bulkEditButton.disabled = !canManage;
-            // Opcional: Añadir/quitar clases de estilo para deshabilitado visualmente si es necesario
-            // if (!canManage) {
-            //     bulkEditButton.classList.add('opacity-50', 'cursor-not-allowed');
-            // } else {
-            //     bulkEditButton.classList.remove('opacity-50', 'cursor-not-allowed');
-            // }
-        }
-
-        if (bulkDeleteButton) {
-            bulkDeleteButton.disabled = currentUserRole !== 'admin';
-            // Opcional: Clases de estilo para deshabilitado
-            // if (currentUserRole !== 'admin') {
-            //     bulkDeleteButton.classList.add('opacity-50', 'cursor-not-allowed');
-            // } else {
-            //     bulkDeleteButton.classList.remove('opacity-50', 'cursor-not-allowed');
-            // }
-        }
+        if(bulkEditButton) bulkEditButton.disabled = !canManage;
+        if(bulkDeleteButton) bulkDeleteButton.disabled = currentUserRole !== 'admin';
+        if (generateDocumentButton) generateDocumentButton.disabled = !canManage; // Habilitar si puede gestionar
     }
+    // const mainDocBtn = document.getElementById('generate-document-button-main');
+    // if (mainDocBtn) mainDocBtn.disabled = !(currentUserRole === 'admin' || currentUserRole === 'manager');
 }
 
     // --- ACCIÓN: Eliminar Múltiples ---
@@ -2742,7 +2736,187 @@ async function populateSelectWithNewOption(selectElement, inputElement, backendF
     
         importFeedback.classList.remove('hidden');
     }
+    function openMovementDocumentModal() {
+    if (selectedEquipmentIds.size === 0) {
+        displayGeneralFeedback('warning', 'Por favor, seleccione al menos un equipo para generar un documento.');
+        return;
+    }
+    if (currentUserRole === 'read_only') { // O permisos más específicos
+        displayGeneralFeedback('error', 'No tiene permiso para generar documentos.');
+        return;
+    }
+
+    movementDocumentForm.reset(); // Limpiar formulario
+    if(movementDocumentFormFeedback) movementDocumentFormFeedback.classList.add('hidden');
     
+    // Establecer fecha actual por defecto
+    if(docFechaInput) docFechaInput.valueAsDate = new Date();
+    
+    // Poblar lista de equipos seleccionados
+    if (docSelectedCountSpan) docSelectedCountSpan.textContent = `(${selectedEquipmentIds.size})`;
+    if (docSelectedEquipmentListDiv) {
+        docSelectedEquipmentListDiv.innerHTML = ''; // Limpiar
+        if (selectedEquipmentIds.size > 0) {
+            const ul = document.createElement('ul');
+            ul.className = 'list-disc list-inside';
+            allEquipmentData.forEach(eq => {
+                if (selectedEquipmentIds.has(eq.id)) {
+                    const li = document.createElement('li');
+                    li.textContent = `${eq.tipo_equipo || 'N/A'} - S/N: ${eq.serial || 'N/A'} (ID: ${eq.id})`;
+                    ul.appendChild(li);
+                }
+            });
+            docSelectedEquipmentListDiv.appendChild(ul);
+        } else {
+            docSelectedEquipmentListDiv.innerHTML = '<p class="italic text-gray-500 dark:text-gray-400">No hay equipos seleccionados.</p>';
+        }
+    }
+    
+    // Autocompletar Asunto basado en tipo de documento (opcional)
+    updateDocumentAsunto(); 
+
+    showModal(movementDocumentModal);
+}
+
+function closeMovementDocumentModal() {
+    hideModal(movementDocumentModal);
+}
+
+function updateDocumentAsunto() {
+    if (!documentTypeSelect || !docAsuntoInput || selectedEquipmentIds.size === 0) return;
+
+    const tipoDoc = documentTypeSelect.value;
+    let primerTipoEquipo = "";
+    // Intentar obtener el tipo del primer equipo seleccionado
+    const primerIdSeleccionado = selectedEquipmentIds.values().next().value;
+    if (primerIdSeleccionado) {
+        const primerEquipo = allEquipmentData.find(eq => eq.id === primerIdSeleccionado);
+        if (primerEquipo) {
+            primerTipoEquipo = primerEquipo.tipo_equipo || "Equipo";
+        } else {
+            primerTipoEquipo = "Equipo";
+        }
+    } else {
+        primerTipoEquipo = "Equipo(s)";
+    }
+    
+    let asuntoSugerido = "";
+    if (tipoDoc === "Nota de Retiro") asuntoSugerido = `RETIRO DE ${primerTipoEquipo.toUpperCase()}`;
+    else if (tipoDoc === "Acta de Entrega") asuntoSugerido = `ENTREGA DE ${primerTipoEquipo.toUpperCase()}`;
+    else if (tipoDoc === "Constancia de Cambio") asuntoSugerido = `CAMBIO DE ${primerTipoEquipo.toUpperCase()}`;
+    else if (tipoDoc === "Acta de Asignación") asuntoSugerido = `ASIGNACIÓN DE ${primerTipoEquipo.toUpperCase()}`;
+    
+    if (selectedEquipmentIds.size > 1 && primerTipoEquipo !== "Equipo(s)") {
+        asuntoSugerido += " Y OTROS";
+    }
+    docAsuntoInput.value = asuntoSugerido;
+}
+
+
+// En logica_index.js
+
+async function handleGenerateMovementDocument(event) {
+    event.preventDefault();
+
+    if (!backend || typeof backend.generate_movement_document !== 'function') {
+        displayMovementFormFeedback('error', 'Error: Servicio de generación de documentos no disponible.');
+        console.error("handleGenerateMovementDocument: 'backend' o 'backend.generate_movement_document' no está definido.");
+        return;
+    }
+    if (selectedEquipmentIds.size === 0) {
+        displayMovementFormFeedback('error', 'No hay equipos seleccionados para generar el documento.');
+        return;
+    }
+
+    const numeroEditable = docNumeroEditableInput.value.trim();
+    const fechaDoc = docFechaInput.value;
+    const paraNombre = docParaNombreInput.value.trim();
+    const paraDepto = docParaDepartamentoInput.value.trim();
+    const asuntoDoc = docAsuntoInput.value.trim();
+    const deParteDoc = docDeParteInput.value.trim(); // Asumiendo que es readonly y siempre tiene valor
+
+    if (!numeroEditable || !fechaDoc || !paraNombre || !paraDepto || !asuntoDoc) {
+        displayMovementFormFeedback('error', 'Por favor, complete todos los campos editables marcados con (*).');
+        return;
+    }
+
+    const formFields = {
+        document_type: documentTypeSelect.value,
+        numero_documento: `2025-ATIT MON-${numeroEditable.padStart(4, '0')}`,
+        fecha: fechaDoc,
+        para: `${paraNombre} / ${paraDepto}`,
+        de_parte: deParteDoc,
+        asunto: asuntoDoc,
+        // Si necesitas los campos de firma de vuelta, añádelos aquí desde sus inputs
+        // firma_nombre: docFirmaNombreInput.value.trim(),
+        // firma_cargo: docFirmaCargoInput.value.trim(),
+        // firma_designacion: docFirmaDesignacionInput.value.trim()
+    };
+
+    const documentData = {
+        document_type: formFields.document_type,
+        equipment_ids: Array.from(selectedEquipmentIds),
+        form_fields: formFields
+    };
+
+    console.log("Enviando datos para generar documento:", documentData);
+    displayMovementFormFeedback('info', 'Generando documento PDF, por favor espere...');
+    
+    if(generatePdfButton) {
+        generatePdfButton.disabled = true;
+        generatePdfButton.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>Generando...`;
+    }
+
+    try {
+        const jsonResponse = await backend.generate_movement_document(JSON.stringify(documentData));
+        const result = JSON.parse(jsonResponse);
+
+        if (result.success) {
+            displayMovementFormFeedback('success', result.message || 'Documento PDF generado correctamente.');
+            if (result.filepath && typeof displayImportFeedback === 'function') { // Asegúrate que displayImportFeedback exista
+                displayImportFeedback('success', result.message || 'Documento PDF generado.', { filepath: result.filepath });
+            }
+            setTimeout(closeMovementDocumentModal, 2000);
+        } else {
+            displayMovementFormFeedback('error', result.message || "Error al generar el documento PDF.");
+        }
+    } catch (error) {
+        console.error("Excepción en handleGenerateMovementDocument:", error);
+        displayMovementFormFeedback('error', `Error de comunicación o procesamiento: ${error.message || 'Error desconocido'}`);
+    } finally {
+        if(generatePdfButton) {
+            generatePdfButton.disabled = false;
+            generatePdfButton.innerHTML = `<i class="fas fa-file-pdf mr-2"></i>Generar PDF`;
+        }
+    }
+}
+
+function displayMovementFormFeedback(type, message) {
+    if (!movementDocumentFormFeedback) return;
+    movementDocumentFormFeedback.textContent = message;
+    movementDocumentFormFeedback.className = 'mb-4 p-3 rounded text-sm'; // Reset
+    if (type === 'success') movementDocumentFormFeedback.classList.add('bg-green-100', 'dark:bg-green-700', 'text-green-700', 'dark:text-green-100');
+    else if (type === 'error') movementDocumentFormFeedback.classList.add('bg-red-100', 'dark:bg-red-700', 'text-red-700', 'dark:text-red-100');
+    else movementDocumentFormFeedback.classList.add('bg-blue-100', 'dark:bg-blue-700', 'text-blue-700', 'dark:text-blue-100'); // info
+    movementDocumentFormFeedback.classList.remove('hidden');
+    // No ocultar automáticamente, el usuario debe verlo o se cierra el modal.
+}
+    if (generateDocumentButton) {
+    generateDocumentButton.addEventListener('click', openMovementDocumentModal);
+    }
+    if (closeMovementDocumentModalButton) {
+        closeMovementDocumentModalButton.addEventListener('click', closeMovementDocumentModal);
+    }
+    if (cancelMovementDocumentButton) {
+        cancelMovementDocumentButton.addEventListener('click', closeMovementDocumentModal);
+    }
+    if (movementDocumentForm) {
+        movementDocumentForm.addEventListener('submit', handleGenerateMovementDocument);
+    }
+    if (documentTypeSelect) { // Para autocompletar asunto
+        documentTypeSelect.addEventListener('change', updateDocumentAsunto);
+    }
+
     
     // --- Función Auxiliar para Escapar HTML (Importante por seguridad con innerHTML) ---
     function escapeHtml(unsafe) {

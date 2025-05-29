@@ -384,7 +384,56 @@ class BackendHandler(QObject):
             print(f"Error generando QR para ID {equipment_id}: {e}")
             traceback.print_exc()
             return ""
+    @Slot(str, result=str) # Recibe JSON con datos del documento y lista de IDs de equipos
+    def generate_movement_document(self, document_data_json):
+        try:
+            data = json.loads(document_data_json)
+            print(f"BackendHandler: Solicitud generate_movement_document. Tipo: {data.get('document_type')}")
 
+            # Validaciones básicas
+            if not self._check_permission(['admin', 'manager']): # O quien pueda generar documentos
+                return json.dumps({'success': False, 'message': 'Permiso denegado.'})
+            
+            document_type = data.get('document_type')
+            equipment_ids = data.get('equipment_ids') # Lista de IDs
+            form_fields = data.get('form_fields') # Diccionario con PARA, DE, ASUNTO, etc.
+
+            if not document_type or not equipment_ids or not form_fields:
+                return json.dumps({'success': False, 'message': 'Datos incompletos para generar el documento.'})
+
+            # 1. Obtener los detalles completos de los equipos seleccionados desde la BD
+            equipment_details_list = []
+            for eq_id in equipment_ids:
+                details = database.get_equipment_by_id(eq_id) # Asume que esta función existe y desencripta
+                if details:
+                    equipment_details_list.append(details)
+            
+            if not equipment_details_list:
+                return json.dumps({'success': False, 'message': 'No se encontraron detalles para los equipos seleccionados.'})
+            
+            ruta_header_absoluta = resource_path(os.path.join("html_ui", "assets", "header.png"))
+            ruta_footer_absoluta = resource_path(os.path.join("html_ui", "assets", "footer.jpg"))
+
+            # 2. Llamar al ReportGenerator
+            generator = ReportGenerator() # Asume que tienes la clase
+            # Pasar todos los datos necesarios al generador
+            pdf_result = generator.generate_custom_document(
+                document_type=document_type,
+                form_data=form_fields, # PARA, DE, ASUNTO, FECHA, NUM_DOC
+                equipment_data=equipment_details_list, # Lista de diccionarios de equipos
+                header_image_path=ruta_header_absoluta, # Pasar la ruta absoluta
+                footer_image_path=ruta_footer_absoluta  # Pasar la ruta absoluta
+            )
+            
+            return json.dumps(pdf_result)
+
+        except json.JSONDecodeError:
+            return json.dumps({'success': False, 'message': 'Error en el formato de datos enviados.'})
+        except Exception as e:
+            print(f"!!! EXCEPCIÓN en generate_movement_document: {e}")
+            traceback.print_exc()
+            return json.dumps({'success': False, 'message': f'Error crítico del servidor: {e}'})
+    
     @Slot(result=list)
     def get_users(self):
         print("BackendHandler: get_users llamado.")

@@ -180,22 +180,27 @@
                 <button id="next-page-button" title="Página Siguiente" class="px-3 py-1 border border-gray-300 rounded-md bg-white text-gray-700 text-sm hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed" disabled>Sig ></button>
             </div>
         </div>
-<div id="bulk-actions-panel" class="mb-4 p-3 rounded-lg shadow bg-white text-gray-800 
-                                     flex flex-col sm:flex-row sm:items-center justify-between 
-                                     space-y-2 sm:space-y-0 sm:space-x-4 z-40 hidden">
-    <!-- El `selected-count` ahora es un div para darle más control de espacio -->
-    <div id="selected-count" class="text-lg font-semibold whitespace-nowrap">0 equipo(s) seleccionado(s)</div>
-    
-    <!-- Contenedor para los botones (para que se agrupen bien en línea) -->
-    <div class="flex space-x-2"> <!-- Cambiado de flex-col a flex y quitado w-full de los botones -->
-        <button id="bulk-edit-button" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2" disabled>
-            <i class="fas fa-edit mr-1"></i> Editar Seleccionados
-        </button>
-        <button id="bulk-delete-button" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2" disabled>
-            <i class="fas fa-trash mr-1"></i> Eliminar Seleccionados
-        </button>
-    </div>
-</div>
+        <div id="bulk-actions-panel" class="mb-4 p-3 rounded-lg shadow bg-white text-gray-800 
+                                            flex flex-col sm:flex-row sm:items-center justify-between 
+                                            space-y-2 sm:space-y-0 sm:space-x-4 z-40 hidden">
+            <!-- El `selected-count` ahora es un div para darle más control de espacio -->
+            <div id="selected-count" class="text-lg font-semibold whitespace-nowrap">0 equipo(s) seleccionado(s)</div>
+            
+            <!-- Contenedor para los botones (para que se agrupen bien en línea) -->
+            <div class="flex space-x-2"> <!-- Cambiado de flex-col a flex y quitado w-full de los botones -->
+                <button id="generate-document-button" 
+                        class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 requires-manager" 
+                        title="Generar Documento de Movimiento para Seleccionados">
+                    <i class="fas fa-file-alt mr-1"></i> Generar Documento
+                </button>
+                <button id="bulk-edit-button" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2" disabled>
+                    <i class="fas fa-edit mr-1"></i> Editar Seleccionados
+                </button>
+                <button id="bulk-delete-button" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2" disabled>
+                    <i class="fas fa-trash mr-1"></i> Eliminar Seleccionados
+                </button>
+            </div>
+        </div>
         <!-- TABLA DE EQUIPOS -->
     <!-- TABLA DE EQUIPOS -->
     <div class="bg-white rounded-lg shadow overflow-hidden">
@@ -510,6 +515,84 @@
         </div>
     </div>
 
+<!-- MODAL PARA GENERAR DOCUMENTO DE MOVIMIENTO (SIMPLIFICADO) -->
+<div id="movement-document-modal" class="modal">
+    <div class="modal-wrapper">
+        <div class="modal-content max-w-xl"> <!-- Más pequeño ahora -->
+            <button id="close-movement-document-modal-button" class="absolute top-4 right-4 text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 text-2xl focus:outline-none z-10">×</button>
+            <h2 id="movement-document-modal-title" class="text-xl font-semibold mb-6 text-gray-800 dark:text-gray-100 border-b border-gray-200 dark:border-gray-700 pb-3">Generar Nota de Movimiento</h2>
+            
+            <div id="movement-document-form-feedback" class="mb-4 p-3 rounded text-sm hidden"></div>
+            
+            <form id="movement-document-form" novalidate>
+                <div class="space-y-4">
+                    <!-- Tipo de Documento (podría ser fijo si siempre es "Nota de Retiro" o un select simple) -->
+                    <div>
+                        <label for="document-type-select" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Tipo de Documento</label>
+                        <select id="document-type-select" name="document_type"
+                                class="mt-1 block w-full px-3 py-2 rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 shadow-sm sm:text-sm">
+                            <option value="Nota de Retiro">Nota de Retiro</option>
+                            <option value="Acta de Entrega">Acta de Entrega</option>
+                            <option value="Constancia de Cambio">Constancia de Cambio</option>
+                            <option value="Acta de Asignación">Acta de Asignación</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label for="doc-numero-editable" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Número Documento (últimos dígitos) <span class="text-red-500">*</span></label>
+                        <div class="flex items-center mt-1">
+                            <span class="px-3 py-2 bg-gray-100 dark:bg-gray-700 border border-r-0 border-gray-300 dark:border-gray-600 rounded-l-md text-gray-600 dark:text-gray-400 sm:text-sm whitespace-nowrap">2025-ATIT MON-</span>
+                            <input type="text" id="doc-numero-editable" name="numero_documento_editable" required placeholder="0023" value=""
+                                   class="block w-full px-3 py-2 rounded-r-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 shadow-sm focus:border-indigo-500 dark:focus:border-indigo-400 focus:ring-1 focus:ring-indigo-500 dark:focus:ring-indigo-400 sm:text-sm">
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label for="doc-para-nombre" class="block text-sm font-medium text-gray-700 dark:text-gray-300">PARA (Nombre/Entidad) <span class="text-red-500">*</span></label>
+                        <input type="text" id="doc-para-nombre" name="para_nombre" required value=""
+                               class="mt-1 block w-full px-3 py-2 rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 shadow-sm sm:text-sm">
+                    </div>
+                    <div>
+                        <label for="doc-para-departamento" class="block text-sm font-medium text-gray-700 dark:text-gray-300">PARA (Departamento/Unidad) <span class="text-red-500">*</span></label>
+                        <input type="text" id="doc-para-departamento" name="para_departamento" required value=""
+                               class="mt-1 block w-full px-3 py-2 rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 shadow-sm sm:text-sm">
+                    </div>
+
+                    <div>
+                        <label for="doc-de-parte" class="block text-sm font-medium text-gray-700 dark:text-gray-300">DE (Unidad Emisora)</label>
+                        <input type="text" id="doc-de-parte" name="de_parte" value="INFRAESTRUCTURA TECNOLOGICA MONAGAS." readonly
+                               class="mt-1 block w-full px-3 py-2 rounded-md border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-600 text-gray-700 dark:text-gray-300 shadow-sm sm:text-sm cursor-not-allowed">
+                    </div>
+                    
+                    <div>
+                        <label for="doc-asunto" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Asunto <span class="text-red-500">*</span></label>
+                        <input type="text" id="doc-asunto" name="asunto" required value="RETIRO DE CPU"
+                               class="mt-1 block w-full px-3 py-2 rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 shadow-sm sm:text-sm">
+                    </div>
+                    <div>
+                        <label for="doc-fecha" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Fecha Documento <span class="text-red-500">*</span></label>
+                        <input type="date" id="doc-fecha" name="fecha" required
+                               class="mt-1 block w-full px-3 py-2 rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 shadow-sm sm:text-sm">
+                    </div>
+
+                    <div>
+                        <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Equipos Seleccionados: <span id="doc-selected-count" class="font-normal">(0)</span></h4>
+                        <div id="doc-selected-equipment-list" class="max-h-28 overflow-y-auto bg-gray-50 dark:bg-gray-700 p-2 border border-gray-200 dark:border-gray-600 rounded-md text-xs">
+                            <p class="italic text-gray-500 dark:text-gray-400">No hay equipos seleccionados.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end space-x-3 mt-8 pt-5 border-t border-gray-200 dark:border-gray-700">
+                    <button type="button" id="cancel-movement-document-button" class="bg-gray-300 dark:bg-gray-600 ...">Cancelar</button>
+                    <button type="submit" id="generate-pdf-button" class="bg-indigo-600 hover:bg-indigo-700 ...">
+                        <i class="fas fa-file-pdf mr-2"></i>Generar PDF
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
     <div id="delete-confirm-modal" class="modal">
         <div class="modal-wrapper">
             <div class="modal-content">
